@@ -48,7 +48,7 @@ export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJ
                 className="inline-jump"
                 onClick={() => onJumpToCell({ dive: 1.0, gene: 'ANK1' })}
               >
-                Dive to 40 nm <ArrowUpRight size={14} />
+                Dive to 10 nm <ArrowUpRight size={14} />
               </button>
             </article>
 
@@ -63,7 +63,7 @@ export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJ
               <button
                 type="button"
                 className="inline-jump"
-                onClick={() => onJumpToCell({ dive: 0.55, gene: 'SPTA1' })}
+                onClick={() => onJumpToCell({ dive: 0.41, gene: 'SPTA1' })}
               >
                 Inspect bilayer rim <ArrowUpRight size={14} />
               </button>
@@ -173,7 +173,7 @@ export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJ
                         className="inline-jump"
                         onClick={() => onJumpToCell({ dive: 1.0, gene: g.id })}
                       >
-                        Drill in <ArrowUpRight size={13} />
+                        Inspect 10 nm <ArrowUpRight size={13} />
                       </button>
                     </td>
                   </tr>

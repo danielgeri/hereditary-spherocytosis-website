@@ -8,13 +8,14 @@ import {
   Play,
   RotateCcw,
   Sparkles,
+  ZoomIn,
 } from 'lucide-react';
 import { GENES, GeneId, ReadingDepth } from '../data/hsContent';
 import { ProjectedPin, RbcSceneEngine } from '../scene/RbcSceneEngine';
 
 interface CellSandboxProps {
   depth: ReadingDepth;
-  dive: number; // 0.0 (7.5 μm whole cell) -> 1.0 (40 nm membrane tethers)
+  dive: number; // 0.00 (7.5 μm) -> 0.41 (500 nm) -> 0.79 (40 nm) -> 1.00 (10 nm Complex)
   onDiveChange: (nextDive: number) => void;
   selectedGene: GeneId;
   onGeneChange: (gene: GeneId, syncSeverity?: boolean) => void;
@@ -23,9 +24,10 @@ interface CellSandboxProps {
 }
 
 const SCALE_STOPS = [
-  { label: '7.5 μm', sub: 'Whole Cell', value: 0.0 },
-  { label: '500 nm', sub: 'Bilayer Rim', value: 0.5 },
-  { label: '40 nm', sub: 'Tethers', value: 1.0 },
+  { label: '7.5 μm', sub: 'Whole Cell', mobileSub: 'Cell', value: 0.0 },
+  { label: '500 nm', sub: 'Bilayer Rim', mobileSub: 'Rim', value: 0.41 },
+  { label: '40 nm', sub: 'Mesh', mobileSub: 'Mesh', value: 0.79 },
+  { label: '10 nm', sub: 'Complex', mobileSub: 'Complex', value: 1.0 },
 ];
 
 export const CellSandbox: React.FC<CellSandboxProps> = ({
@@ -113,8 +115,22 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
     [selectedGene]
   );
 
-  const isMolecular = dive >= 0.45;
+  const isMolecular = dive >= 0.34;
+  const isComplexClose = dive >= 0.88;
   const heroFade = Math.max(0, 1 - dive * 2.8);
+
+  const activeStopIndex = useMemo(() => {
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < SCALE_STOPS.length; i++) {
+      const d = Math.abs(dive - SCALE_STOPS[i].value);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  }, [dive]);
 
   // Derived biophysical readouts
   const savRatio = (1.0 - severity * 0.28).toFixed(2);
@@ -133,13 +149,15 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
           ? 'Absent'
           : 'Hyperchromic';
 
-  // Physical scale indicator readout (interpolates logarithmically 7.5 μm -> 40 nm)
+  // Physical scale indicator readout (interpolates logarithmically 7.5 μm -> 10 nm)
   const scaleLabel = useMemo(() => {
-    const nm = Math.round(7500 * Math.pow(40 / 7500, dive));
-    return nm >= 1000 ? `${(nm / 1000).toFixed(1)} μm` : `${nm} nm`;
+    const rawNm = 7500 * Math.pow(10 / 7500, dive);
+    if (rawNm >= 1000) return `${(rawNm / 1000).toFixed(1)} μm`;
+    const nm = rawNm >= 150 ? Math.round(rawNm / 10) * 10 : Math.round(rawNm);
+    return `${nm} nm`;
   }, [dive]);
 
-  // Molecular 3D callout labels (shown smoothly once dived into the cutaway)
+  // 40 nm Mesh overview callout labels
   const molecularPins: { id: string; label: string; accent?: string }[] = useMemo(
     () => [
       {
@@ -176,6 +194,43 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
     [depth]
   );
 
+  // 10 nm Single Protein Complex close-up subunit labels
+  const closePins: { id: string; label: string; accent?: string }[] = useMemo(
+    () => [
+      {
+        id: 'closeBand3',
+        label: depth === 'plain' ? 'Band 3 Dimer' : 'Band 3 (SLC4A1) Dimer',
+        accent: '#AD7243',
+      },
+      {
+        id: 'closeGpa',
+        label: depth === 'plain' ? 'Glycophorin A' : 'Glycophorin A (GPA)',
+        accent: '#9E4450',
+      },
+      {
+        id: 'closeAnkyrin',
+        label: depth === 'plain' ? 'Ankyrin-1 Arch' : 'Ankyrin-1 Solenoid (ANK1)',
+        accent: '#913241',
+      },
+      {
+        id: 'closeProtein42',
+        label: depth === 'plain' ? 'Protein 4.2 Clasp' : 'Protein 4.2 (EPB42)',
+        accent: '#3F6F62',
+      },
+      {
+        id: 'closeAlphaSpec',
+        label: depth === 'plain' ? 'α-Spectrin Coil' : 'α-Spectrin (SPTA1)',
+        accent: '#49687C',
+      },
+      {
+        id: 'closeBetaSpec',
+        label: depth === 'plain' ? 'β-Spectrin Coil' : 'β-Spectrin (SPTB)',
+        accent: '#2E526A',
+      },
+    ],
+    [depth]
+  );
+
   return (
     <section id="explorer" className="stage-hero" aria-label="Interactive 3D Red Blood Cell">
       {/* Full-Bleed 3D WebGL Canvas */}
@@ -190,7 +245,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
             pinElsRef.current.diveHotspot = el;
           }}
           className="cell-reticle"
-          onClick={() => onDiveChange(1.0)}
+          onClick={() => onDiveChange(0.79)}
           aria-label="Dive inside the red blood cell membrane"
         >
           <span className="cell-reticle__ring" aria-hidden="true" />
@@ -201,8 +256,23 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
           </span>
         </button>
 
-        {/* Cryo-EM Molecular Callout Labels (appear once dived into the cutaway) */}
+        {/* 40 nm Mesh Overview Callout Labels */}
         {molecularPins.map((p) => (
+          <div
+            key={p.id}
+            ref={(el) => {
+              pinElsRef.current[p.id] = el;
+            }}
+            className="pin-tag"
+            aria-hidden="true"
+          >
+            <span className="pin-tag__dot" style={{ background: p.accent ?? '#57504A' }} />
+            <span>{p.label}</span>
+          </div>
+        ))}
+
+        {/* 10 nm Protein Complex Subunit Labels */}
+        {closePins.map((p) => (
           <div
             key={p.id}
             ref={(el) => {
@@ -250,10 +320,19 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
           onClick={() => onDiveChange(0.0)}
         >
           <ArrowLeft size={14} />
-          <span>Whole Cell (7.5 μm)</span>
+          <span>
+            Whole Cell <span className="crumb-back-unit">(7.5 μm)</span>
+          </span>
         </button>
         <span className="crumb-scale">
-          {scaleLabel} · {depth === 'plain' ? 'Membrane Cross-Section' : 'Vertical Linkage Complex'}
+          {scaleLabel} ·{' '}
+          {isComplexClose
+            ? depth === 'plain'
+              ? 'Single Protein Complex'
+              : 'Ankyrin–Band 3 Macrocomplex'
+            : depth === 'plain'
+              ? 'Membrane Cross-Section'
+              : 'Vertical Linkage Complex'}
         </span>
       </div>
 
@@ -291,14 +370,14 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
         </button>
       </div>
 
-      {/* Right-Edge Continuous Scale Depth Rail (7.5 μm <-> 40 nm) */}
-      <aside className="scale-rail" aria-label="Zoom depth from whole cell to molecular membrane">
+      {/* Right-Edge Continuous Scale Depth Rail (7.5 μm <-> 10 nm) */}
+      <aside className="scale-rail" aria-label="Zoom depth from whole cell to protein complex">
         <span className="scale-rail__readout">{scaleLabel}</span>
 
         <div className="scale-rail__track-wrap">
           <div className="scale-rail__stops">
-            {SCALE_STOPS.map((stop) => {
-              const active = Math.abs(dive - stop.value) < 0.22;
+            {SCALE_STOPS.map((stop, idx) => {
+              const active = idx === activeStopIndex;
               return (
                 <button
                   key={stop.label}
@@ -336,10 +415,10 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
 
       {/* Bottom Floating Frosted Studio Bar */}
       <div className="stage-dock">
-        {/* Compact scale stops shown on mobile/tablet where the side rail hides */}
+        {/* Compact 4-stop scale bar shown on mobile/tablet where the side rail hides */}
         <div className="mobile-scale-bar" role="group" aria-label="Magnification scale">
-          {SCALE_STOPS.map((stop) => {
-            const active = Math.abs(dive - stop.value) < 0.22;
+          {SCALE_STOPS.map((stop, idx) => {
+            const active = idx === activeStopIndex;
             return (
               <button
                 key={stop.label}
@@ -348,13 +427,13 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
                 onClick={() => onDiveChange(stop.value)}
               >
                 <span className="mobile-scale-btn__num">{stop.label}</span>
-                <span>{stop.sub}</span>
+                <span>{stop.mobileSub}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Top strip: 5-gene selector + primary Dive/Pull-Back toggle */}
+        {/* Top strip: 5-gene selector + primary Dive / Zoom-10nm / Pull-Back toggle */}
         <div className="stage-dock__top">
           <div className="gene-selector" role="group" aria-label="Select red blood cell genotype">
             {GENES.map((g) => (
@@ -374,17 +453,22 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
           <button
             type="button"
             className="dive-cta"
-            onClick={() => onDiveChange(isMolecular ? 0.0 : 1.0)}
+            onClick={() => onDiveChange(!isMolecular ? 0.79 : !isComplexClose ? 1.0 : 0.0)}
           >
-            {isMolecular ? (
-              <>
-                <ArrowLeft size={14} />
-                <span>Pull Back to Cell</span>
-              </>
-            ) : (
+            {!isMolecular ? (
               <>
                 <Focus size={14} />
                 <span>Dive into Membrane</span>
+              </>
+            ) : !isComplexClose ? (
+              <>
+                <ZoomIn size={14} />
+                <span>Zoom to 10 nm</span>
+              </>
+            ) : (
+              <>
+                <ArrowLeft size={14} />
+                <span>Pull Back to Cell</span>
               </>
             )}
           </button>
@@ -457,7 +541,9 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
               </div>
             </div>
             <div className="micro-tip">
-              Click any protein in 3D to inspect · Drag to orbit inside bilayer
+              {isComplexClose
+                ? 'Drag to orbit protein complex · Switch genes above to focus each subunit'
+                : 'Click any protein in 3D to inspect · Scroll wheel or pick 10 nm to zoom closer'}
             </div>
           </div>
         )}

@@ -527,7 +527,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  height: 176px;
+  height: 220px;
 }
 
 .scale-stop {
@@ -568,7 +568,7 @@ body {
 .scale-rail__slider {
   writing-mode: vertical-lr;
   direction: ltr;
-  inline-size: 176px;
+  inline-size: 220px;
   block-size: 1.8rem;
 }
 
@@ -875,7 +875,7 @@ input[type='range'] {
 
 input[type='range'].scale-rail__slider {
   --slider-direction: to bottom;
-  inline-size: 176px;
+  inline-size: 220px;
   block-size: 1.8rem;
 }
 
@@ -1451,11 +1451,11 @@ input[type='range']:focus-visible {
   color: var(--ink-muted);
 }
 
-/* Compact scale strip (hidden on desktop where vertical side rail is shown) */
+/* Compact 4-stop scale strip (hidden on desktop where vertical side rail is shown) */
 .mobile-scale-bar {
   display: none;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.3rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.2rem;
   padding: 3px;
   border-radius: var(--radius-md);
   background: var(--bg-tinted);
@@ -1466,23 +1466,23 @@ input[type='range']:focus-visible {
   appearance: none;
   border: 0;
   background: transparent;
-  padding: 0.34rem 0.45rem;
+  padding: 0.3rem 0.2rem;
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.06rem;
+  gap: 0.05rem;
   line-height: 1.15;
   font-family: var(--font-sans);
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   color: var(--ink-secondary);
   cursor: pointer;
 }
 
 .mobile-scale-btn__num {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1588,6 +1588,7 @@ input[type='range']:focus-visible {
     font-size: 0.72rem;
   }
 
+  .crumb-back-unit,
   .crumb-scale {
     display: none;
   }

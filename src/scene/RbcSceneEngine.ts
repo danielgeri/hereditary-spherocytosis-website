@@ -5,6 +5,7 @@ import {
   createMembraneAssembly,
   CUT_MAX_CHORD,
   CUT_UNIT_CENTER,
+  HeroFocusFrame,
   MembraneMolecularAssembly,
 } from './membraneAssembly';
 import {
@@ -17,7 +18,7 @@ import {
 } from './rbcGeometry';
 
 export interface SceneState {
-  dive: number; // 0.0 = Whole Cell (7.5 μm) -> 1.0 = Molecular Cutaway (40 nm)
+  dive: number; // 0.00 = 7.5 μm -> 0.41 = 500 nm -> 0.79 = 40 nm -> 1.00 = 10 nm Protein Complex
   severity: number; // 0..1 biconcave disc -> dense spherocyte
   selectedGene: GeneId;
   isolateMembrane: boolean;
@@ -71,10 +72,9 @@ export class RbcSceneEngine {
   private curSeverity = 0.0;
   private curShellOpacity = 1.0;
   private curIsolate = 0.0;
-  // Fine zoom extensions beyond [0, 1] so mouse wheel zooms smoothly past whole-cell or deep into 40 nm
-  private targetExtraOut = 0.0; // 0..0.38 (zoom further out from whole cell)
+  private targetExtraOut = 0.0; // 0..0.38 pull back past whole cell
   private curExtraOut = 0.0;
-  private targetExtraIn = 0.0; // 0..0.38 (zoom extra close inside 40 nm proteins)
+  private targetExtraIn = 0.0; // 0..0.32 extra close-up past 10 nm (~6 nm)
   private curExtraIn = 0.0;
   private userOrbiting = false;
   private orbitOffset = new THREE.Vector3();
@@ -96,6 +96,14 @@ export class RbcSceneEngine {
   private apertureLocalNormal = new THREE.Vector3(0, 1, 0);
   private apertureWorldPos = new THREE.Vector3();
   private apertureWorldNormal = new THREE.Vector3(0, 1, 0);
+  private heroFocusLocal: HeroFocusFrame = {
+    center: new THREE.Vector3(),
+    normal: new THREE.Vector3(0, 1, 0),
+    subunitTarget: new THREE.Vector3(),
+  };
+  private heroFocusWorldCenter = new THREE.Vector3();
+  private heroFocusWorldSubunit = new THREE.Vector3();
+  private heroFocusWorldNormal = new THREE.Vector3(0, 1, 0);
 
   constructor(
     container: HTMLElement,
@@ -111,12 +119,13 @@ export class RbcSceneEngine {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#F5F0E8');
-    this.scene.fog = new THREE.FogExp2('#F5F0E8', 0.07);
+    this.scene.fog = new THREE.FogExp2('#F5F0E8', 0.068);
 
     const w = container.clientWidth || 1200;
     const h = container.clientHeight || 720;
 
-    this.camera = new THREE.PerspectiveCamera(34, w / h, 0.04, 50);
+    // Tight near plane (0.008) so 10 nm protein close-ups never suffer near-plane clipping!
+    this.camera = new THREE.PerspectiveCamera(34, w / h, 0.008, 50);
     this.camera.position.set(-0.14, 1.48, 3.92);
 
     this.renderer = new THREE.WebGLRenderer({
@@ -150,7 +159,6 @@ export class RbcSceneEngine {
     this.floorShadow.position.set(0, -1.25, 0);
     this.scene.add(this.floorShadow);
 
-    // Build Hero Photorealistic Red Blood Cell
     this.heroRbc = createParametricRbcGeometry(128, 88);
     this.heroMat = createRealisticRbcMaterial();
     this.heroMat.uniforms.uCutUnitCenter.value.copy(CUT_UNIT_CENTER);
@@ -160,8 +168,6 @@ export class RbcSceneEngine {
     this.heroPivot.scale.setScalar(1.08);
     this.heroPivot.add(this.heroMesh);
 
-    // Mount the conformal Cryo-EM Molecular Assembly directly at heroPivot's origin (0,0,0)
-    // so every single lipid & protein sits in the exact same coordinate frame as the RBC mesh!
     this.membraneAssembly = createMembraneAssembly();
     this.heroPivot.add(this.membraneAssembly.root);
 
@@ -179,14 +185,14 @@ export class RbcSceneEngine {
   }
 
   private setupLighting(): void {
-    const hemi = new THREE.HemisphereLight('#FFFDF8', '#D9CEC0', 1.1);
+    const hemi = new THREE.HemisphereLight('#FFFDF8', '#D9CEC0', 1.15);
     this.scene.add(hemi);
 
     const key = new THREE.DirectionalLight('#FFFBF3', 1.65);
     key.position.set(3.2, 5.4, 3.8);
     this.scene.add(key);
 
-    const fill = new THREE.DirectionalLight('#F2E9E1', 0.62);
+    const fill = new THREE.DirectionalLight('#F2E9E1', 0.65);
     fill.position.set(-4.2, 1.4, 2.8);
     this.scene.add(fill);
 
@@ -247,14 +253,14 @@ export class RbcSceneEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // POINTER, PROTEIN PICKING, DESKTOP PINCH & MOBILE TWO-FINGER PINCH-TO-DIVE
+  // POINTER, PROTEIN PICKING, MOUSE-WHEEL ZOOM & MOBILE TWO-FINGER PINCH
   // ---------------------------------------------------------------------------
   private onPointerDown = (e: PointerEvent) => {
     this.pointerDownPos.set(e.clientX, e.clientY);
   };
 
   private onPointerMove = (e: PointerEvent) => {
-    if (this.curDive < 0.48) {
+    if (this.curDive < 0.34) {
       this.renderer.domElement.style.cursor = 'grab';
       return;
     }
@@ -280,7 +286,7 @@ export class RbcSceneEngine {
     );
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
 
-    if (this.curDive > 0.48) {
+    if (this.curDive > 0.34) {
       const meshes = this.membraneAssembly.pickables.map((p) => p.mesh);
       const hits = this.raycaster.intersectObjects(meshes, false);
       if (hits.length > 0) {
@@ -295,21 +301,19 @@ export class RbcSceneEngine {
 
   private onDoubleClick = () => {
     this.userOrbiting = false;
-    const nextDive = this.state.dive < 0.5 ? 1.0 : 0.0;
+    // Double-click steps smoothly: Whole Cell -> 40 nm Mesh -> 10 nm Complex -> Whole Cell
+    const nextDive = this.state.dive < 0.65 ? 0.79 : this.state.dive < 0.94 ? 1.0 : 0.0;
     this.callbacks.onDiveRequest?.(nextDive);
   };
 
   private onWheel = (e: WheelEvent) => {
-    // If the user has already scrolled down into the editorial guide below, let normal page scroll work
     if (window.scrollY > 20 && !e.ctrlKey) {
       return;
     }
 
     const clampedY = THREE.MathUtils.clamp(e.deltaY, -120, 120);
-    // Standard mouse wheel: wheel forward/up (deltaY < 0) = zoom IN; wheel back/down (deltaY > 0) = zoom OUT
-    const step = -clampedY * (e.ctrlKey ? 0.009 : 0.0022);
+    const step = -clampedY * (e.ctrlKey ? 0.0085 : 0.0019);
 
-    // If zooming OUT while already at the outer zoom limit, release scroll to the page naturally
     if (step < 0 && this.state.dive <= 0.001 && this.targetExtraOut >= 0.37 && !e.ctrlKey) {
       return;
     }
@@ -317,7 +321,6 @@ export class RbcSceneEngine {
     e.preventDefault();
 
     if (step > 0) {
-      // Zooming IN: first close any extra pull-back, then dive 0 -> 1, then zoom extra close inside 40 nm
       let rem = step;
       if (this.targetExtraOut > 0) {
         const used = Math.min(this.targetExtraOut, rem);
@@ -331,10 +334,9 @@ export class RbcSceneEngine {
         this.callbacks.onDiveRequest?.(nextDive);
       }
       if (rem > 0 && this.state.dive >= 0.999) {
-        this.targetExtraIn = Math.min(0.38, this.targetExtraIn + rem * 0.9);
+        this.targetExtraIn = Math.min(0.32, this.targetExtraIn + rem * 0.85);
       }
     } else {
-      // Zooming OUT: first back out of extra molecular close-up, then pull back 1 -> 0, then pull back from whole cell
       let rem = -step;
       if (this.targetExtraIn > 0) {
         const used = Math.min(this.targetExtraIn, rem);
@@ -367,7 +369,7 @@ export class RbcSceneEngine {
       const dx = e.touches[0].clientX - e.touches[1].clientX;
       const dy = e.touches[0].clientY - e.touches[1].clientY;
       const dist = Math.hypot(dx, dy);
-      const delta = (dist - this.lastPinchDist) * 0.0045;
+      const delta = (dist - this.lastPinchDist) * 0.0042;
       this.lastPinchDist = dist;
       this.userOrbiting = false;
       const nextDive = THREE.MathUtils.clamp(this.state.dive + delta, 0, 1);
@@ -397,12 +399,14 @@ export class RbcSceneEngine {
     const diveChanged = next.dive !== undefined && Math.abs(next.dive - this.state.dive) > 0.001;
     const isolateChanged =
       next.isolateMembrane !== undefined && next.isolateMembrane !== this.state.isolateMembrane;
+    const geneChanged = next.selectedGene !== undefined && next.selectedGene !== this.state.selectedGene;
     this.state = { ...this.state, ...next };
     if (diveChanged) {
       if (this.state.dive > 0.01) this.targetExtraOut = 0;
       if (this.state.dive < 0.99) this.targetExtraIn = 0;
     }
-    if (diveChanged || isolateChanged) {
+    // Gently re-aim when switching dive, isolate, or picking a gene while zoomed into 10 nm!
+    if (diveChanged || isolateChanged || (geneChanged && this.curDive > 0.85)) {
       this.userOrbiting = false;
     }
   }
@@ -416,10 +420,7 @@ export class RbcSceneEngine {
 
   private updateGeometryAndAperture(dt: number): void {
     const gene = this.state.selectedGene;
-
-    // Gentle breathing only at whole-cell scale; pause breathing wave once cutaway opens
-    // so the phospholipid rim stays 100.0% locked flush to the shader lip!
-    const breathWeight = 1.0 - THREE.MathUtils.smoothstep(this.curDive, 0.05, 0.2);
+    const breathWeight = 1.0 - THREE.MathUtils.smoothstep(this.curDive, 0.04, 0.16);
 
     const shapeParams: RbcShapeParams = {
       sphericity: this.curSeverity,
@@ -431,22 +432,20 @@ export class RbcSceneEngine {
 
     this.heroRbc.updateShape(shapeParams);
 
-    const cutOpen = THREE.MathUtils.smoothstep(this.curDive, 0.1, 0.58);
+    const cutOpen = THREE.MathUtils.smoothstep(this.curDive, 0.08, 0.44);
     this.heroMat.uniforms.uCutOpen.value = cutOpen;
     this.heroMat.uniforms.uSphericity.value = this.curSeverity;
     this.heroMat.uniforms.uMicroscopeMode.value = 0.0;
     this.heroMat.uniforms.uTime.value = this.elapsed;
 
-    // Smoothly dissolve the outer RBC shell when Isolate Membrane is active in molecular view
-    const isolateActive = this.state.isolateMembrane && this.curDive > 0.35;
+    // Smoothly dissolve the outer RBC shell when Isolate Membrane is active in cutaway views
+    const isolateActive = this.state.isolateMembrane && this.curDive > 0.32;
     this.curIsolate = THREE.MathUtils.lerp(this.curIsolate, isolateActive ? 1.0 : 0.0, 0.11);
     this.curShellOpacity = 1.0 - this.curIsolate;
     this.heroMat.uniforms.uOpacity.value = this.curShellOpacity;
     this.heroMesh.visible = this.curShellOpacity > 0.015;
-    // Unlock full underside orbiting when viewing the isolated cross-section slab
     this.controls.maxPolarAngle = THREE.MathUtils.lerp(Math.PI * 0.85, Math.PI * 0.96, this.curIsolate);
 
-    // Evaluate exact aperture center & outward normal on live RBC surface
     evalRbcSurfaceFrame(
       CUT_UNIT_CENTER,
       { ...shapeParams, time: 0 },
@@ -454,8 +453,7 @@ export class RbcSceneEngine {
       this.apertureLocalNormal
     );
 
-    // Gentle gallery turntable at whole-cell scale; smoothly present aperture when diving in
-    if (this.curDive < 0.08) {
+    if (this.curDive < 0.07) {
       this.heroPivot.rotation.y += dt * 0.13;
       this.heroPivot.rotation.x = THREE.MathUtils.lerp(this.heroPivot.rotation.x, 0.24, 0.05);
       this.heroPivot.position.y = Math.sin(this.elapsed * 0.95) * 0.04;
@@ -475,7 +473,6 @@ export class RbcSceneEngine {
       .transformDirection(this.heroPivot.matrixWorld)
       .normalize();
 
-    // Update conformal Cryo-EM molecular assembly flush inside the living RBC wall!
     this.membraneAssembly.update({
       gene,
       dive: this.curDive,
@@ -483,8 +480,21 @@ export class RbcSceneEngine {
       elapsed: this.elapsed,
     });
 
+    // Compute live world coordinates of our Hero Protein Complex for the 10 nm close-up stage!
+    this.membraneAssembly.getHeroFocus(gene, this.heroFocusLocal);
+    this.heroFocusWorldCenter
+      .copy(this.heroFocusLocal.center)
+      .applyMatrix4(this.heroPivot.matrixWorld);
+    this.heroFocusWorldSubunit
+      .copy(this.heroFocusLocal.subunitTarget)
+      .applyMatrix4(this.heroPivot.matrixWorld);
+    this.heroFocusWorldNormal
+      .copy(this.heroFocusLocal.normal)
+      .transformDirection(this.heroPivot.matrixWorld)
+      .normalize();
+
     // Background companion erythrocytes
-    const compVis = 1.0 - THREE.MathUtils.smoothstep(this.curDive, 0.08, 0.42);
+    const compVis = 1.0 - THREE.MathUtils.smoothstep(this.curDive, 0.06, 0.35);
     this.companions.forEach((c) => {
       c.mesh.visible = compVis > 0.02;
       c.mat.uniforms.uOpacity.value = 0.32 * compVis;
@@ -497,60 +507,92 @@ export class RbcSceneEngine {
     const shadowScale = THREE.MathUtils.lerp(1.08, 0.78, this.curSeverity);
     this.floorShadow.scale.set(shadowScale, shadowScale, 1);
     (this.floorShadow.material as THREE.MeshBasicMaterial).opacity =
-      1.0 - THREE.MathUtils.smoothstep(this.curDive, 0.25, 0.7);
+      1.0 - THREE.MathUtils.smoothstep(this.curDive, 0.2, 0.55);
   }
 
   private applyDiveCamera(immediate: boolean): void {
     const aspect = this.camera.aspect;
     const isPortrait = aspect < 1.0;
-    // Automatically frame wider and aim lower on portrait phones so the entire cell and
-    // 500 nm / 40 nm cutaways sit cleanly ABOVE the floating bottom mobile dock!
     const portraitBoost = isPortrait ? Math.min(2.05, 1.12 / Math.max(aspect, 0.48)) : 1.0;
 
+    // -----------------------------------------------------------------------
+    // Stage A (dive = 0.00): 7.5 μm Whole Cell
+    // -----------------------------------------------------------------------
     const macroZoomMult = 1.0 + this.curExtraOut * 1.15;
-    const macroPos = this.tmpVecA.set(
+    const posWhole = this.tmpVecA.set(
       isPortrait ? 0.0 : -0.14,
       1.48 * (isPortrait ? portraitBoost * 0.94 : 1.0) * macroZoomMult,
       3.92 * portraitBoost * macroZoomMult
     );
-    const macroLook = this.tmpVecB.set(
+    const lookWhole = this.tmpVecB.set(
       isPortrait ? 0.0 : -0.08,
       isPortrait ? -0.58 : -0.22,
       0
     );
 
+    // -----------------------------------------------------------------------
+    // Stage B (dive = 0.79): 40 nm Hexagonal Mesh Cutaway
+    // -----------------------------------------------------------------------
     const sideTangent = new THREE.Vector3(0.4, 0.0, 0.92).normalize();
-    const microScale =
-      (isPortrait ? Math.min(2.05, portraitBoost * 1.12) : 1.0) * (1.0 - this.curExtraIn * 0.78);
-    // When membrane is isolated, lower camera elevation slightly to reveal the vertical
-    // Band 3 -> Ankyrin-1 -> Coiled Spectrin profile cleanly against the alabaster studio!
-    const normalLift = THREE.MathUtils.lerp(0.96, 0.62, this.curIsolate);
-    const sidePull = THREE.MathUtils.lerp(0.84, 1.12, this.curIsolate);
-    const microPos = this.apertureWorldPos
+    const meshScale = isPortrait ? Math.min(2.05, portraitBoost * 1.12) : 1.0;
+    const normalLiftMesh = THREE.MathUtils.lerp(0.96, 0.62, this.curIsolate);
+    const sidePullMesh = THREE.MathUtils.lerp(0.84, 1.12, this.curIsolate);
+    const posMesh = this.apertureWorldPos
       .clone()
-      .addScaledVector(this.apertureWorldNormal, normalLift * microScale)
-      .addScaledVector(sideTangent, sidePull * microScale);
-    const microLook = this.apertureWorldPos
+      .addScaledVector(this.apertureWorldNormal, normalLiftMesh * meshScale)
+      .addScaledVector(sideTangent, sidePullMesh * meshScale);
+    const lookMesh = this.apertureWorldPos
       .clone()
       .addScaledVector(this.apertureWorldNormal, -0.14)
       .add(new THREE.Vector3(0, isPortrait ? -0.36 : -0.13, 0));
 
-    const d = this.curDive;
-    const ease = d * d * (3 - 2 * d);
+    // -----------------------------------------------------------------------
+    // Stage C (dive = 1.00): 10 nm Single Hero Protein Complex Macro Close-Up!
+    // Low-angle dramatic profile showcasing Band 3 + GPA + Ankyrin-1 + Protein 4.2 + Spectrin
+    // -----------------------------------------------------------------------
+    const complexScale =
+      (isPortrait ? Math.min(1.75, portraitBoost * 0.98) : 1.16) * (1.0 - this.curExtraIn * 0.48);
+    // Elevated 3/4 macro angle stays safely above the rising biconcave rim lipids
+    // so zero foreground tails or neighboring clusters ever cross the lens!
+    const heroSide = new THREE.Vector3(0.18, -0.04, 0.98).normalize();
+    const heroCross = new THREE.Vector3()
+      .crossVectors(this.heroFocusWorldNormal, heroSide)
+      .normalize();
+    const heroNormalLift = THREE.MathUtils.lerp(0.28, 0.24, this.curIsolate);
+    const posComplex = this.heroFocusWorldSubunit
+      .clone()
+      .addScaledVector(this.heroFocusWorldNormal, heroNormalLift * complexScale)
+      .addScaledVector(heroSide, 0.41 * complexScale)
+      .addScaledVector(heroCross, 0.15 * complexScale);
+    const lookComplex = this.heroFocusWorldSubunit
+      .clone()
+      .add(new THREE.Vector3(0, isPortrait ? -0.088 : -0.032, 0));
 
-    const desiredPos = new THREE.Vector3().lerpVectors(macroPos, microPos, ease);
-    desiredPos.y += Math.sin(ease * Math.PI) * 0.28;
-    const desiredLook = new THREE.Vector3().lerpVectors(macroLook, microLook, ease);
+    // Piecewise smooth blend: [0.00 -> 0.79] Whole Cell -> 40 nm Mesh, [0.79 -> 1.00] 40 nm Mesh -> 10 nm Complex
+    const desiredPos = new THREE.Vector3();
+    const desiredLook = new THREE.Vector3();
+
+    if (this.curDive <= 0.79) {
+      const t = THREE.MathUtils.clamp(this.curDive / 0.79, 0, 1);
+      const ease = t * t * (3 - 2 * t);
+      desiredPos.lerpVectors(posWhole, posMesh, ease);
+      desiredPos.y += Math.sin(ease * Math.PI) * 0.28;
+      desiredLook.lerpVectors(lookWhole, lookMesh, ease);
+    } else {
+      const t = THREE.MathUtils.clamp((this.curDive - 0.79) / 0.21, 0, 1);
+      const ease = t * t * (3 - 2 * t);
+      desiredPos.lerpVectors(posMesh, posComplex, ease);
+      desiredLook.lerpVectors(lookMesh, lookComplex, ease);
+    }
 
     if (immediate) {
       this.camera.position.copy(desiredPos);
       this.controls.target.copy(desiredLook);
       this.controls.update();
     } else if (!this.userOrbiting) {
-      this.camera.position.lerp(desiredPos, 0.11);
-      this.controls.target.lerp(desiredLook, 0.12);
+      this.camera.position.lerp(desiredPos, 0.1);
+      this.controls.target.lerp(desiredLook, 0.11);
     } else {
-      // Preserve the user's custom orbit direction while still honoring scroll-wheel zoom distance!
       this.orbitOffset.subVectors(this.camera.position, this.controls.target);
       const desiredDist = desiredPos.distanceTo(desiredLook);
       const curDist = this.orbitOffset.length() || desiredDist;
@@ -564,25 +606,51 @@ export class RbcSceneEngine {
   private projectPins(): void {
     if (!this.callbacks.onPinsUpdate) return;
     const pins: ProjectedPin[] = [];
+    const isPortrait = this.camera.aspect < 1.0;
 
-    const projectWorld = (id: string, worldPos: THREE.Vector3, allow: boolean) => {
+    // Safe screen rectangle keeping callout pills clear of top utility HUD, right scale rail, and bottom dock
+    const minX = isPortrait ? 6 : 6;
+    const maxX = isPortrait ? 94 : 86;
+    const minY = 9;
+    const maxY = isPortrait ? 65 : 71;
+
+    const projectWorld = (
+      id: string,
+      worldPos: THREE.Vector3,
+      allow: boolean,
+      clampHorizontal = false
+    ) => {
       const v = worldPos.clone().project(this.camera);
-      const visible =
-        allow && v.z < 1 && v.x > -0.92 && v.x < 0.92 && v.y > -0.88 && v.y < 0.88;
+      const rawX = (v.x * 0.5 + 0.5) * 100;
+      const rawY = (-v.y * 0.5 + 0.5) * 100;
+      const inSafeBox =
+        allow && v.z < 1 && rawX >= minX && rawX <= maxX && rawY >= minY && rawY <= maxY;
+      const x = clampHorizontal
+        ? THREE.MathUtils.clamp(rawX, isPortrait ? 19 : 10, isPortrait ? 81 : 83)
+        : rawX;
       pins.push({
         id,
-        x: (v.x * 0.5 + 0.5) * 100,
-        y: (-v.y * 0.5 + 0.5) * 100,
-        visible,
+        x,
+        y: rawY,
+        visible: inSafeBox,
       });
     };
 
-    projectWorld('diveHotspot', this.apertureWorldPos, this.curDive < 0.28);
+    // 1. Macro Whole-Cell reticle hotspot (dive < 0.24)
+    projectWorld('diveHotspot', this.apertureWorldPos, this.curDive < 0.24, false);
 
-    const showMolPins = this.curDive > 0.62;
+    // 2. 40 nm Mesh overview pins (dive between 0.55 and 0.88)
+    const showMeshPins = this.curDive > 0.55 && this.curDive < 0.88;
     Object.entries(this.membraneAssembly.pinAnchors).forEach(([id, localPos]) => {
       const worldP = localPos.clone().applyMatrix4(this.heroPivot.matrixWorld);
-      projectWorld(id, worldP, showMolPins);
+      projectWorld(id, worldP, showMeshPins, true);
+    });
+
+    // 3. 10 nm Protein Complex subunit pins (dive >= 0.88)
+    const showClosePins = this.curDive >= 0.88;
+    Object.entries(this.membraneAssembly.closePinAnchors).forEach(([id, localPos]) => {
+      const worldP = localPos.clone().applyMatrix4(this.heroPivot.matrixWorld);
+      projectWorld(id, worldP, showClosePins, true);
     });
 
     this.callbacks.onPinsUpdate(pins);
@@ -594,7 +662,7 @@ export class RbcSceneEngine {
     const animStep = this.state.paused || this.reducedMotion ? 0 : dt;
     this.elapsed += animStep;
 
-    this.curDive = THREE.MathUtils.lerp(this.curDive, this.state.dive, 0.12);
+    this.curDive = THREE.MathUtils.lerp(this.curDive, this.state.dive, 0.11);
     this.curExtraOut = THREE.MathUtils.lerp(this.curExtraOut, this.targetExtraOut, 0.12);
     this.curExtraIn = THREE.MathUtils.lerp(this.curExtraIn, this.targetExtraIn, 0.12);
     this.curSeverity = THREE.MathUtils.lerp(this.curSeverity, this.state.severity, 0.11);
