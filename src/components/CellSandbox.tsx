@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowLeft,
-  Eye,
   Focus,
   Layers,
   Pause,
@@ -42,7 +41,6 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
   const engineRef = useRef<RbcSceneEngine | null>(null);
   const pinElsRef = useRef<Record<string, HTMLElement | null>>({});
 
-  const [microscopeMode, setMicroscopeMode] = useState<boolean>(false);
   const [isolateMembrane, setIsolateMembrane] = useState<boolean>(false);
   const [paused, setPaused] = useState<boolean>(false);
 
@@ -76,7 +74,6 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
         dive,
         severity,
         selectedGene,
-        microscopeMode,
         isolateMembrane,
         paused,
       },
@@ -106,11 +103,10 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
       dive,
       severity,
       selectedGene,
-      microscopeMode,
       isolateMembrane,
       paused,
     });
-  }, [dive, severity, selectedGene, microscopeMode, isolateMembrane, paused]);
+  }, [dive, severity, selectedGene, isolateMembrane, paused]);
 
   const activeGene = useMemo(
     () => GENES.find((g) => g.id === selectedGene) ?? GENES[0],
@@ -194,10 +190,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
             pinElsRef.current.diveHotspot = el;
           }}
           className="cell-reticle"
-          onClick={() => {
-            setMicroscopeMode(false);
-            onDiveChange(1.0);
-          }}
+          onClick={() => onDiveChange(1.0)}
           aria-label="Dive inside the red blood cell membrane"
         >
           <span className="cell-reticle__ring" aria-hidden="true" />
@@ -266,20 +259,10 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
 
       {/* Top-Right Minimal Studio Utility Controls */}
       <div className="stage-utilities">
-        {!isMolecular ? (
+        {isMolecular && (
           <button
             type="button"
-            className={`hud-btn ${microscopeMode ? 'is-active' : ''}`}
-            onClick={() => setMicroscopeMode((v) => !v)}
-            title="Switch between 3D Studio lighting and Wright-Giemsa peripheral smear look"
-          >
-            <Eye size={14} />
-            <span>{microscopeMode ? 'Smear View' : '3D Studio'}</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className={`hud-btn ${isolateMembrane ? 'is-active' : ''}`}
+            className={`hud-btn hud-btn--isolate ${isolateMembrane ? 'is-active' : ''}`}
             aria-pressed={isolateMembrane}
             onClick={() => setIsolateMembrane((v) => !v)}
             title="Hide the outer red blood cell to inspect only the membrane cross-section from all angles"
@@ -321,10 +304,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
                   key={stop.label}
                   type="button"
                   className={`scale-stop ${active ? 'is-active' : ''}`}
-                  onClick={() => {
-                    if (stop.value > 0.2) setMicroscopeMode(false);
-                    onDiveChange(stop.value);
-                  }}
+                  onClick={() => onDiveChange(stop.value)}
                 >
                   <span className="scale-stop__num">{stop.label}</span>
                   <span className="scale-stop__sub">{stop.sub}</span>
@@ -349,11 +329,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
                 '--control-value': Math.round(dive * 100),
               } as React.CSSProperties
             }
-            onChange={(e) => {
-              const val = Number(e.target.value) / 100;
-              if (val > 0.2) setMicroscopeMode(false);
-              onDiveChange(val);
-            }}
+            onChange={(e) => onDiveChange(Number(e.target.value) / 100)}
           />
         </div>
       </aside>
@@ -369,10 +345,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
                 key={stop.label}
                 type="button"
                 className={`mobile-scale-btn ${active ? 'is-active' : ''}`}
-                onClick={() => {
-                  if (stop.value > 0.2) setMicroscopeMode(false);
-                  onDiveChange(stop.value);
-                }}
+                onClick={() => onDiveChange(stop.value)}
               >
                 <span className="mobile-scale-btn__num">{stop.label}</span>
                 <span>{stop.sub}</span>
@@ -401,10 +374,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
           <button
             type="button"
             className="dive-cta"
-            onClick={() => {
-              if (!isMolecular) setMicroscopeMode(false);
-              onDiveChange(isMolecular ? 0.0 : 1.0);
-            }}
+            onClick={() => onDiveChange(isMolecular ? 0.0 : 1.0)}
           >
             {isMolecular ? (
               <>

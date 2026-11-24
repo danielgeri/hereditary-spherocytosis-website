@@ -39,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({ depth, onDepthChange }) => {
             aria-pressed={depth === 'clinical'}
             onClick={() => onDepthChange('clinical')}
           >
-            Clinical
+            Clinical Language
           </button>
         </div>
       </div>

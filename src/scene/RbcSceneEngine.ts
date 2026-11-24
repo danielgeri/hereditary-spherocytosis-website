@@ -20,7 +20,6 @@ export interface SceneState {
   dive: number; // 0.0 = Whole Cell (7.5 μm) -> 1.0 = Molecular Cutaway (40 nm)
   severity: number; // 0..1 biconcave disc -> dense spherocyte
   selectedGene: GeneId;
-  microscopeMode: boolean;
   isolateMembrane: boolean;
   paused: boolean;
 }
@@ -70,7 +69,6 @@ export class RbcSceneEngine {
   // Smooth interpolated state
   private curDive = 0.0;
   private curSeverity = 0.0;
-  private curMicroscope = 0.0;
   private curShellOpacity = 1.0;
   private curIsolate = 0.0;
   // Fine zoom extensions beyond [0, 1] so mouse wheel zooms smoothly past whole-cell or deep into 40 nm
@@ -108,7 +106,6 @@ export class RbcSceneEngine {
     this.state = { ...initialState };
     this.curDive = initialState.dive;
     this.curSeverity = initialState.severity;
-    this.curMicroscope = initialState.microscopeMode ? 1 : 0;
     this.callbacks = callbacks;
     this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -398,8 +395,6 @@ export class RbcSceneEngine {
 
   public updateState(next: Partial<SceneState>): void {
     const diveChanged = next.dive !== undefined && Math.abs(next.dive - this.state.dive) > 0.001;
-    const microChanged =
-      next.microscopeMode !== undefined && next.microscopeMode !== this.state.microscopeMode;
     const isolateChanged =
       next.isolateMembrane !== undefined && next.isolateMembrane !== this.state.isolateMembrane;
     this.state = { ...this.state, ...next };
@@ -407,7 +402,7 @@ export class RbcSceneEngine {
       if (this.state.dive > 0.01) this.targetExtraOut = 0;
       if (this.state.dive < 0.99) this.targetExtraIn = 0;
     }
-    if (diveChanged || microChanged || isolateChanged) {
+    if (diveChanged || isolateChanged) {
       this.userOrbiting = false;
     }
   }
@@ -439,7 +434,7 @@ export class RbcSceneEngine {
     const cutOpen = THREE.MathUtils.smoothstep(this.curDive, 0.1, 0.58);
     this.heroMat.uniforms.uCutOpen.value = cutOpen;
     this.heroMat.uniforms.uSphericity.value = this.curSeverity;
-    this.heroMat.uniforms.uMicroscopeMode.value = this.curMicroscope;
+    this.heroMat.uniforms.uMicroscopeMode.value = 0.0;
     this.heroMat.uniforms.uTime.value = this.elapsed;
 
     // Smoothly dissolve the outer RBC shell when Isolate Membrane is active in molecular view
@@ -460,13 +455,10 @@ export class RbcSceneEngine {
     );
 
     // Gentle gallery turntable at whole-cell scale; smoothly present aperture when diving in
-    if (this.curDive < 0.08 && !this.state.microscopeMode) {
+    if (this.curDive < 0.08) {
       this.heroPivot.rotation.y += dt * 0.13;
       this.heroPivot.rotation.x = THREE.MathUtils.lerp(this.heroPivot.rotation.x, 0.24, 0.05);
       this.heroPivot.position.y = Math.sin(this.elapsed * 0.95) * 0.04;
-    } else if (this.state.microscopeMode && this.curDive < 0.2) {
-      this.heroPivot.rotation.x = THREE.MathUtils.lerp(this.heroPivot.rotation.x, 0.04, 0.08);
-      this.heroPivot.position.y = THREE.MathUtils.lerp(this.heroPivot.position.y, 0.0, 0.08);
     } else {
       const normY =
         (((this.heroPivot.rotation.y % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -494,7 +486,7 @@ export class RbcSceneEngine {
     // Background companion erythrocytes
     const compVis = 1.0 - THREE.MathUtils.smoothstep(this.curDive, 0.08, 0.42);
     this.companions.forEach((c) => {
-      c.mesh.visible = compVis > 0.02 && !this.state.microscopeMode;
+      c.mesh.visible = compVis > 0.02;
       c.mat.uniforms.uOpacity.value = 0.32 * compVis;
       c.mat.uniforms.uSphericity.value = this.curSeverity * 0.65;
       c.mesh.position.y = c.basePos.y + Math.sin(this.elapsed * 0.55 + c.phase) * 0.12;
@@ -511,27 +503,25 @@ export class RbcSceneEngine {
   private applyDiveCamera(immediate: boolean): void {
     const aspect = this.camera.aspect;
     const isPortrait = aspect < 1.0;
-    // Automatically pull camera back proportionally on narrow portrait mobile screens
-    // so neither the whole RBC nor the 40 nm Cryo-EM cutaway clips horizontally!
-    const portraitBoost = isPortrait ? Math.min(1.9, 1.05 / Math.max(aspect, 0.48)) : 1.0;
+    // Automatically frame wider and aim lower on portrait phones so the entire cell and
+    // 500 nm / 40 nm cutaways sit cleanly ABOVE the floating bottom mobile dock!
+    const portraitBoost = isPortrait ? Math.min(2.05, 1.12 / Math.max(aspect, 0.48)) : 1.0;
 
     const macroZoomMult = 1.0 + this.curExtraOut * 1.15;
     const macroPos = this.tmpVecA.set(
       isPortrait ? 0.0 : -0.14,
-      (this.state.microscopeMode ? 3.85 : 1.48) *
-        (isPortrait ? portraitBoost * 0.92 : 1.0) *
-        macroZoomMult,
-      (this.state.microscopeMode ? 0.48 : 3.92) * portraitBoost * macroZoomMult
+      1.48 * (isPortrait ? portraitBoost * 0.94 : 1.0) * macroZoomMult,
+      3.92 * portraitBoost * macroZoomMult
     );
     const macroLook = this.tmpVecB.set(
       isPortrait ? 0.0 : -0.08,
-      isPortrait ? -0.18 : -0.22,
+      isPortrait ? -0.58 : -0.22,
       0
     );
 
     const sideTangent = new THREE.Vector3(0.4, 0.0, 0.92).normalize();
     const microScale =
-      (isPortrait ? Math.min(1.75, portraitBoost * 0.96) : 1.0) * (1.0 - this.curExtraIn * 0.78);
+      (isPortrait ? Math.min(2.05, portraitBoost * 1.12) : 1.0) * (1.0 - this.curExtraIn * 0.78);
     // When membrane is isolated, lower camera elevation slightly to reveal the vertical
     // Band 3 -> Ankyrin-1 -> Coiled Spectrin profile cleanly against the alabaster studio!
     const normalLift = THREE.MathUtils.lerp(0.96, 0.62, this.curIsolate);
@@ -543,7 +533,7 @@ export class RbcSceneEngine {
     const microLook = this.apertureWorldPos
       .clone()
       .addScaledVector(this.apertureWorldNormal, -0.14)
-      .add(new THREE.Vector3(0, isPortrait ? -0.18 : -0.13, 0));
+      .add(new THREE.Vector3(0, isPortrait ? -0.36 : -0.13, 0));
 
     const d = this.curDive;
     const ease = d * d * (3 - 2 * d);
@@ -608,11 +598,6 @@ export class RbcSceneEngine {
     this.curExtraOut = THREE.MathUtils.lerp(this.curExtraOut, this.targetExtraOut, 0.12);
     this.curExtraIn = THREE.MathUtils.lerp(this.curExtraIn, this.targetExtraIn, 0.12);
     this.curSeverity = THREE.MathUtils.lerp(this.curSeverity, this.state.severity, 0.11);
-    this.curMicroscope = THREE.MathUtils.lerp(
-      this.curMicroscope,
-      this.state.microscopeMode ? 1 : 0,
-      0.1
-    );
 
     this.updateGeometryAndAperture(animStep);
     this.applyDiveCamera(false);
