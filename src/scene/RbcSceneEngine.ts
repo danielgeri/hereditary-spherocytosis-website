@@ -40,10 +40,17 @@ interface CompanionCell {
   phase: number;
 }
 
+export interface ProteinHoverInfo {
+  gene: GeneId;
+  x: number; // container-relative px
+  y: number; // container-relative px
+}
+
 export interface EngineCallbacks {
   onPinsUpdate?: (pins: ProjectedPin[]) => void;
   onDiveRequest?: (targetDive: number) => void;
   onGenePick?: (gene: GeneId) => void;
+  onProteinHover?: (info: ProteinHoverInfo | null) => void;
 }
 
 export class RbcSceneEngine {
@@ -61,11 +68,13 @@ export class RbcSceneEngine {
   private state: SceneState;
   private callbacks: EngineCallbacks;
 
-  // Pointer, raycasting & two-finger mobile pinch state
+  // Pointer, hover, raycasting & two-finger mobile pinch state
   private raycaster = new THREE.Raycaster();
   private pointerDownPos = new THREE.Vector2();
   private pointerNdc = new THREE.Vector2();
   private lastPinchDist: number | null = null;
+  private hoveredGene: GeneId | null = null;
+  private isPointerDown = false;
 
   // Smooth interpolated state
   private curDive = 0.0;
@@ -255,13 +264,28 @@ export class RbcSceneEngine {
   // ---------------------------------------------------------------------------
   // POINTER, PROTEIN PICKING, MOUSE-WHEEL ZOOM & MOBILE TWO-FINGER PINCH
   // ---------------------------------------------------------------------------
+  private clearHover(): void {
+    if (this.hoveredGene !== null) {
+      this.hoveredGene = null;
+      this.callbacks.onProteinHover?.(null);
+    }
+  }
+
   private onPointerDown = (e: PointerEvent) => {
+    this.isPointerDown = true;
     this.pointerDownPos.set(e.clientX, e.clientY);
+    this.clearHover();
   };
 
   private onPointerMove = (e: PointerEvent) => {
-    if (this.curDive < 0.34) {
-      this.renderer.domElement.style.cursor = 'grab';
+    if (
+      this.curDive < 0.34 ||
+      this.isPointerDown ||
+      e.buttons !== 0 ||
+      (e.pointerType !== 'mouse' && e.pointerType !== 'pen')
+    ) {
+      this.clearHover();
+      this.renderer.domElement.style.cursor = this.isPointerDown ? 'grabbing' : 'grab';
       return;
     }
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -272,10 +296,26 @@ export class RbcSceneEngine {
     this.raycaster.setFromCamera(this.pointerNdc, this.camera);
     const meshes = this.membraneAssembly.pickables.map((p) => p.mesh);
     const hits = this.raycaster.intersectObjects(meshes, false);
-    this.renderer.domElement.style.cursor = hits.length > 0 ? 'pointer' : 'grab';
+    if (hits.length > 0) {
+      const hitObj = hits[0].object;
+      const found = this.membraneAssembly.pickables.find((p) => p.mesh === hitObj);
+      if (found) {
+        this.hoveredGene = found.gene;
+        this.renderer.domElement.style.cursor = 'pointer';
+        this.callbacks.onProteinHover?.({
+          gene: found.gene,
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        });
+        return;
+      }
+    }
+    this.clearHover();
+    this.renderer.domElement.style.cursor = 'grab';
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    this.isPointerDown = false;
     const dist = Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y);
     if (dist > 6) return;
 
@@ -297,6 +337,12 @@ export class RbcSceneEngine {
         }
       }
     }
+  };
+
+  private onPointerLeave = () => {
+    this.isPointerDown = false;
+    this.clearHover();
+    this.renderer.domElement.style.cursor = 'grab';
   };
 
   private onDoubleClick = () => {
@@ -388,6 +434,7 @@ export class RbcSceneEngine {
     el.addEventListener('pointerdown', this.onPointerDown);
     el.addEventListener('pointermove', this.onPointerMove);
     el.addEventListener('pointerup', this.onPointerUp);
+    el.addEventListener('pointerleave', this.onPointerLeave);
     el.addEventListener('dblclick', this.onDoubleClick);
     el.addEventListener('wheel', this.onWheel, { passive: false });
     el.addEventListener('touchstart', this.onTouchStart, { passive: true });
@@ -473,8 +520,13 @@ export class RbcSceneEngine {
       .transformDirection(this.heroPivot.matrixWorld)
       .normalize();
 
+    if (this.curDive < 0.34 && this.hoveredGene !== null) {
+      this.clearHover();
+    }
+
     this.membraneAssembly.update({
       gene,
+      hoveredGene: this.hoveredGene,
       dive: this.curDive,
       shape: shapeParams,
       elapsed: this.elapsed,
@@ -691,6 +743,7 @@ export class RbcSceneEngine {
     el.removeEventListener('pointerdown', this.onPointerDown);
     el.removeEventListener('pointermove', this.onPointerMove);
     el.removeEventListener('pointerup', this.onPointerUp);
+    el.removeEventListener('pointerleave', this.onPointerLeave);
     el.removeEventListener('dblclick', this.onDoubleClick);
     el.removeEventListener('wheel', this.onWheel);
     el.removeEventListener('touchstart', this.onTouchStart);

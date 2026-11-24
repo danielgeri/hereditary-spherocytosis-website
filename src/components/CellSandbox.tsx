@@ -11,7 +11,7 @@ import {
   ZoomIn,
 } from 'lucide-react';
 import { GENES, GeneId, ReadingDepth } from '../data/hsContent';
-import { ProjectedPin, RbcSceneEngine } from '../scene/RbcSceneEngine';
+import { ProjectedPin, ProteinHoverInfo, RbcSceneEngine } from '../scene/RbcSceneEngine';
 
 interface CellSandboxProps {
   depth: ReadingDepth;
@@ -30,6 +30,15 @@ const SCALE_STOPS = [
   { label: '10 nm', sub: 'Complex', mobileSub: 'Complex', value: 1.0 },
 ];
 
+const PROTEIN_SHORT_NAME: Record<GeneId, string> = {
+  healthy: 'Healthy Anchors',
+  ANK1: 'Ankyrin-1',
+  SPTB: 'β-Spectrin',
+  SLC4A1: 'Band 3',
+  SPTA1: 'α-Spectrin',
+  EPB42: 'Protein 4.2',
+};
+
 export const CellSandbox: React.FC<CellSandboxProps> = ({
   depth,
   dive,
@@ -42,15 +51,32 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<RbcSceneEngine | null>(null);
   const pinElsRef = useRef<Record<string, HTMLElement | null>>({});
+  const hoverTipRef = useRef<HTMLDivElement | null>(null);
 
   const [isolateMembrane, setIsolateMembrane] = useState<boolean>(false);
   const [paused, setPaused] = useState<boolean>(false);
+  const [hoveredGene, setHoveredGene] = useState<GeneId | null>(null);
 
   // Keep latest callbacks in refs so Three.js event listeners never go stale
   const diveChangeRef = useRef(onDiveChange);
   const geneChangeRef = useRef(onGeneChange);
   diveChangeRef.current = onDiveChange;
   geneChangeRef.current = onGeneChange;
+
+  const handleProteinHover = useCallback((info: ProteinHoverInfo | null) => {
+    const nextGene = info?.gene ?? null;
+    setHoveredGene((prev) => (prev === nextGene ? prev : nextGene));
+    const tip = hoverTipRef.current;
+    if (info && tip && mountRef.current) {
+      const stageW = mountRef.current.clientWidth || 1200;
+      const flipLeft = info.x > stageW - 235;
+      const tx = flipLeft ? info.x - 16 : info.x + 16;
+      const ty = Math.max(46, info.y - 12);
+      tip.style.transform = flipLeft
+        ? `translate3d(${tx}px, ${ty}px, 0) translate(-100%, -100%)`
+        : `translate3d(${tx}px, ${ty}px, 0) translate(0, -100%)`;
+    }
+  }, []);
 
   const handlePinsUpdate = useCallback((pins: ProjectedPin[]) => {
     for (const pin of pins) {
@@ -83,6 +109,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
         onPinsUpdate: handlePinsUpdate,
         onDiveRequest: (target) => diveChangeRef.current(target),
         onGenePick: (gene) => geneChangeRef.current(gene, false),
+        onProteinHover: handleProteinHover,
       }
     );
     engineRef.current = engine;
@@ -113,6 +140,11 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
   const activeGene = useMemo(
     () => GENES.find((g) => g.id === selectedGene) ?? GENES[0],
     [selectedGene]
+  );
+
+  const hoveredProfile = useMemo(
+    () => (hoveredGene ? GENES.find((g) => g.id === hoveredGene) ?? null : null),
+    [hoveredGene]
   );
 
   const isMolecular = dive >= 0.34;
@@ -158,7 +190,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
   }, [dive]);
 
   // 40 nm Mesh overview callout labels
-  const molecularPins: { id: string; label: string; accent?: string }[] = useMemo(
+  const molecularPins: { id: string; label: string; accent?: string; genes?: GeneId[] }[] = useMemo(
     () => [
       {
         id: 'bilayer',
@@ -169,21 +201,25 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
         id: 'band3',
         label: depth === 'plain' ? 'Band 3 Channel' : 'Band 3 (SLC4A1)',
         accent: '#AD7243',
+        genes: ['SLC4A1'],
       },
       {
         id: 'ankyrin',
         label: depth === 'plain' ? 'Ankyrin-1 Arch' : 'Ankyrin-1 (ANK1)',
         accent: '#913241',
+        genes: ['ANK1'],
       },
       {
         id: 'protein42',
         label: depth === 'plain' ? 'Protein 4.2 Clasp' : 'Protein 4.2 (EPB42)',
         accent: '#3F6F62',
+        genes: ['EPB42'],
       },
       {
         id: 'spectrin',
         label: depth === 'plain' ? 'Coiled Spectrin Mesh' : 'α/β-Spectrin Coiled-Coil',
         accent: '#49687C',
+        genes: ['SPTA1', 'SPTB'],
       },
       {
         id: 'junction41',
@@ -195,12 +231,13 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
   );
 
   // 10 nm Single Protein Complex close-up subunit labels
-  const closePins: { id: string; label: string; accent?: string }[] = useMemo(
+  const closePins: { id: string; label: string; accent?: string; genes?: GeneId[] }[] = useMemo(
     () => [
       {
         id: 'closeBand3',
         label: depth === 'plain' ? 'Band 3 Dimer' : 'Band 3 (SLC4A1) Dimer',
         accent: '#AD7243',
+        genes: ['SLC4A1'],
       },
       {
         id: 'closeGpa',
@@ -211,21 +248,25 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
         id: 'closeAnkyrin',
         label: depth === 'plain' ? 'Ankyrin-1 Arch' : 'Ankyrin-1 Solenoid (ANK1)',
         accent: '#913241',
+        genes: ['ANK1'],
       },
       {
         id: 'closeProtein42',
         label: depth === 'plain' ? 'Protein 4.2 Clasp' : 'Protein 4.2 (EPB42)',
         accent: '#3F6F62',
+        genes: ['EPB42'],
       },
       {
         id: 'closeAlphaSpec',
         label: depth === 'plain' ? 'α-Spectrin Coil' : 'α-Spectrin (SPTA1)',
         accent: '#49687C',
+        genes: ['SPTA1'],
       },
       {
         id: 'closeBetaSpec',
         label: depth === 'plain' ? 'β-Spectrin Coil' : 'β-Spectrin (SPTB)',
         accent: '#2E526A',
+        genes: ['SPTB'],
       },
     ],
     [depth]
@@ -235,6 +276,29 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
     <section id="explorer" className="stage-hero" aria-label="Interactive 3D Red Blood Cell">
       {/* Full-Bleed 3D WebGL Canvas */}
       <div ref={mountRef} className="stage-canvas" />
+
+      {/* Floating Tactile Cursor Tooltip when Hovering Clickable 3D Proteins */}
+      <div
+        ref={hoverTipRef}
+        className={`protein-hover-tip ${hoveredProfile ? 'is-visible' : ''}`}
+        aria-hidden="true"
+      >
+        {hoveredProfile && (
+          <>
+            <span
+              className="protein-hover-tip__dot"
+              style={{ backgroundColor: hoveredProfile.color }}
+            />
+            <span className="protein-hover-tip__name">
+              {PROTEIN_SHORT_NAME[hoveredProfile.id]} ({hoveredProfile.symbol})
+            </span>
+            <span className="protein-hover-tip__sep">·</span>
+            <span className="protein-hover-tip__action">
+              {selectedGene === hoveredProfile.id ? 'Inspecting' : 'Click to inspect'}
+            </span>
+          </>
+        )}
+      </div>
 
       {/* 3D-to-2D Projected Interactive Overlay Layer */}
       <div className="pins-layer">
@@ -257,34 +321,40 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
         </button>
 
         {/* 40 nm Mesh Overview Callout Labels */}
-        {molecularPins.map((p) => (
-          <div
-            key={p.id}
-            ref={(el) => {
-              pinElsRef.current[p.id] = el;
-            }}
-            className="pin-tag"
-            aria-hidden="true"
-          >
-            <span className="pin-tag__dot" style={{ background: p.accent ?? '#57504A' }} />
-            <span>{p.label}</span>
-          </div>
-        ))}
+        {molecularPins.map((p) => {
+          const isHovered = Boolean(hoveredGene && p.genes?.includes(hoveredGene));
+          return (
+            <div
+              key={p.id}
+              ref={(el) => {
+                pinElsRef.current[p.id] = el;
+              }}
+              className={`pin-tag ${isHovered ? 'is-hovered' : ''}`}
+              aria-hidden="true"
+            >
+              <span className="pin-tag__dot" style={{ background: p.accent ?? '#57504A' }} />
+              <span>{p.label}</span>
+            </div>
+          );
+        })}
 
         {/* 10 nm Protein Complex Subunit Labels */}
-        {closePins.map((p) => (
-          <div
-            key={p.id}
-            ref={(el) => {
-              pinElsRef.current[p.id] = el;
-            }}
-            className="pin-tag"
-            aria-hidden="true"
-          >
-            <span className="pin-tag__dot" style={{ background: p.accent ?? '#57504A' }} />
-            <span>{p.label}</span>
-          </div>
-        ))}
+        {closePins.map((p) => {
+          const isHovered = Boolean(hoveredGene && p.genes?.includes(hoveredGene));
+          return (
+            <div
+              key={p.id}
+              ref={(el) => {
+                pinElsRef.current[p.id] = el;
+              }}
+              className={`pin-tag ${isHovered ? 'is-hovered' : ''}`}
+              aria-hidden="true"
+            >
+              <span className="pin-tag__dot" style={{ background: p.accent ?? '#57504A' }} />
+              <span>{p.label}</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Top-Left Editorial Title (fades gracefully as you dive inside the cell) */}
@@ -440,7 +510,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
               <button
                 key={g.id}
                 type="button"
-                className={`gene-pill ${selectedGene === g.id ? 'is-active' : ''}`}
+                className={`gene-pill ${selectedGene === g.id ? 'is-active' : ''} ${hoveredGene === g.id ? 'is-hovered' : ''}`}
                 onClick={() => onGeneChange(g.id, true)}
               >
                 <span className="gene-pill__dot" style={{ backgroundColor: g.color }} />

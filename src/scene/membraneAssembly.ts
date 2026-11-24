@@ -28,6 +28,7 @@ export interface MembraneMolecularAssembly {
   root: THREE.Group;
   update: (params: {
     gene: GeneId;
+    hoveredGene?: GeneId | null;
     dive: number;
     shape: RbcShapeParams;
     elapsed: number;
@@ -690,6 +691,22 @@ export function createMembraneAssembly(): MembraneMolecularAssembly {
   };
 
   const mutedStone = new THREE.Color('#B5ACA3');
+  const hoverWarm = new THREE.Color('#FFF7EA');
+  const tmpBaseC = new THREE.Color();
+  const tmpEmissiveC = new THREE.Color();
+  const gpaBase = new THREE.Color('#A84D5B');
+  const gpaMuted = new THREE.Color('#A84D5B').lerp(mutedStone, 0.48);
+
+  // Smoothly interpolated per-gene hover weights (0..1) for tactile glow & scale pop
+  const hoverWeights: Record<GeneId, number> = {
+    healthy: 0,
+    ANK1: 0,
+    SPTB: 0,
+    SLC4A1: 0,
+    SPTA1: 0,
+    EPB42: 0,
+  };
+  const HOVERABLE_GENES: GeneId[] = ['ANK1', 'SPTB', 'SLC4A1', 'SPTA1', 'EPB42'];
 
   const styleGroup = (
     grp: THREE.Group,
@@ -698,46 +715,81 @@ export function createMembraneAssembly(): MembraneMolecularAssembly {
     isCompromised: boolean,
     isAnyDefect: boolean,
     reveal: number,
-    pulse: number
+    pulse: number,
+    hoverAmt: number
   ) => {
-    const baseC = new THREE.Color(baseColorHex);
+    tmpBaseC.set(baseColorHex);
+    // Keep hover glow deeply hue-matched (only 12% warm lift) so ACESFilmic never washes out sculpted 3D ridges!
+    tmpEmissiveC.copy(tmpBaseC).lerp(hoverWarm, 0.12);
+
     grp.children.forEach((child) => {
       const mat = (child as THREE.Mesh).material as THREE.MeshPhysicalMaterial;
+      mat.roughness = 0.38 - 0.14 * hoverAmt;
+      mat.clearcoat = 0.18 + 0.55 * hoverAmt;
+
       if (isTarget && isCompromised) {
-        mat.color.copy(baseC);
-        mat.opacity = (0.28 + 0.3 * pulse) * reveal;
+        mat.color.copy(tmpBaseC).lerp(hoverWarm, 0.08 * hoverAmt);
+        mat.opacity = Math.min(0.92, (0.28 + 0.3 * pulse + 0.24 * hoverAmt) * reveal);
         mat.depthWrite = false;
-        mat.emissive.copy(baseC);
-        mat.emissiveIntensity = 0.45 * pulse;
+        mat.emissive.copy(hoverAmt > 0.05 ? tmpEmissiveC : tmpBaseC);
+        mat.emissiveIntensity = Math.max(0.45 * pulse, 0.34 * hoverAmt);
       } else if (isTarget) {
-        mat.color.copy(baseC);
+        mat.color.copy(tmpBaseC).lerp(hoverWarm, 0.1 * hoverAmt);
         mat.opacity = 0.98 * reveal;
         mat.depthWrite = reveal > 0.85;
-        mat.emissive.copy(baseC);
-        mat.emissiveIntensity = 0.16;
+        mat.emissive.copy(hoverAmt > 0.05 ? tmpEmissiveC : tmpBaseC);
+        mat.emissiveIntensity = Math.max(0.16, 0.32 * hoverAmt);
       } else if (isAnyDefect) {
-        // Keep non-target proteins crisp & solid (just softly desaturated) so 10 nm macro view stays sharp!
-        mat.color.copy(baseC).lerp(mutedStone, 0.34);
+        // Non-target proteins wake back up into rich saturated color + warm internal glow on hover
+        mat.color
+          .copy(tmpBaseC)
+          .lerp(mutedStone, 0.34 * (1 - hoverAmt))
+          .lerp(hoverWarm, 0.1 * hoverAmt);
         mat.opacity = 0.96 * reveal;
         mat.depthWrite = reveal > 0.85;
-        mat.emissive.set('#000000');
-        mat.emissiveIntensity = 0;
+        if (hoverAmt > 0.005) {
+          mat.emissive.copy(tmpEmissiveC);
+          mat.emissiveIntensity = 0.3 * hoverAmt;
+        } else {
+          mat.emissive.set('#000000');
+          mat.emissiveIntensity = 0;
+        }
       } else {
-        mat.color.copy(baseC);
+        mat.color.copy(tmpBaseC).lerp(hoverWarm, 0.1 * hoverAmt);
         mat.opacity = 0.98 * reveal;
         mat.depthWrite = reveal > 0.85;
-        mat.emissive.set('#000000');
-        mat.emissiveIntensity = 0;
+        if (hoverAmt > 0.005) {
+          mat.emissive.copy(tmpEmissiveC);
+          mat.emissiveIntensity = 0.3 * hoverAmt;
+        } else {
+          mat.emissive.set('#000000');
+          mat.emissiveIntensity = 0;
+        }
       }
     });
   };
 
-  const update: MembraneMolecularAssembly['update'] = ({ gene, dive, shape, elapsed }) => {
+  const update: MembraneMolecularAssembly['update'] = ({
+    gene,
+    hoveredGene = null,
+    dive,
+    shape,
+    elapsed,
+  }) => {
     // Open circular cutaway iris cleanly across Whole Cell (0.0) -> Bilayer Rim (0.41)
     const cutOpen = THREE.MathUtils.smoothstep(dive, 0.08, 0.44);
     const reveal = THREE.MathUtils.smoothstep(dive, 0.09, 0.36);
     root.visible = reveal > 0.01;
     if (!root.visible) return;
+
+    // Smooth hover ramp (fast attack, gentle release)
+    for (let i = 0; i < HOVERABLE_GENES.length; i++) {
+      const gid = HOVERABLE_GENES[i];
+      const target = hoveredGene === gid ? 1 : 0;
+      const rate = target > hoverWeights[gid] ? 0.26 : 0.16;
+      hoverWeights[gid] = THREE.MathUtils.lerp(hoverWeights[gid], target, rate);
+      if (hoverWeights[gid] < 0.002) hoverWeights[gid] = 0;
+    }
 
     if (
       Math.abs(shape.sphericity - lastSphericity) > 0.002 ||
@@ -757,28 +809,36 @@ export function createMembraneAssembly(): MembraneMolecularAssembly {
     const isDefective = gene !== 'healthy';
     const pulse = 0.5 + 0.5 * Math.sin(elapsed * 3.8);
 
+    const b3Hover = hoverWeights.SLC4A1;
+    const ankHover = hoverWeights.ANK1;
+    const p42Hover = hoverWeights.EPB42;
+    const alphaHover = hoverWeights.SPTA1;
+    const betaHover = hoverWeights.SPTB;
+
     anchorClusters.forEach((c) => {
       const b3Hit = gene === 'SLC4A1';
       const ankHit = gene === 'ANK1';
       const p42Hit = gene === 'EPB42';
 
-      styleGroup(c.band3, '#AD7243', b3Hit, c.compromised, isDefective, reveal, pulse);
+      styleGroup(c.band3, '#AD7243', b3Hit, c.compromised, isDefective, reveal, pulse, b3Hover);
       const b3Lift = b3Hit && c.compromised ? 0.011 * pulse : 0;
       c.band3.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.018 + b3Lift);
+      c.band3.scale.setScalar(1.0 + 0.075 * b3Hover);
 
       // GPA stalks stay solid and subtly muted when another gene is highlighted
-      const gpaBase = new THREE.Color('#A84D5B');
       c.gpa.children.forEach((ch) => {
         const mat = (ch as THREE.Mesh).material as THREE.MeshPhysicalMaterial;
-        mat.color.copy(isDefective && !b3Hit ? gpaBase.clone().lerp(mutedStone, 0.48) : gpaBase);
+        mat.color.copy(isDefective && !b3Hit ? gpaMuted : gpaBase);
         mat.opacity = 0.96 * reveal;
         mat.depthWrite = reveal > 0.85;
       });
 
-      styleGroup(c.ankyrin, '#913241', ankHit, c.compromised, isDefective, reveal, pulse);
-      c.ankyrin.scale.setScalar(ankHit && c.compromised ? 0.88 + 0.08 * pulse : 1.0);
+      styleGroup(c.ankyrin, '#913241', ankHit, c.compromised, isDefective, reveal, pulse, ankHover);
+      const ankBaseScale = ankHit && c.compromised ? 0.88 + 0.08 * pulse : 1.0;
+      c.ankyrin.scale.setScalar(ankBaseScale * (1.0 + 0.075 * ankHover));
 
-      styleGroup(c.protein42, '#3F6F62', p42Hit, c.compromised, isDefective, reveal, pulse);
+      styleGroup(c.protein42, '#3F6F62', p42Hit, c.compromised, isDefective, reveal, pulse, p42Hover);
+      c.protein42.scale.setScalar(1.0 + 0.095 * p42Hover);
     });
 
     const alphaHit = gene === 'SPTA1';
@@ -790,34 +850,51 @@ export function createMembraneAssembly(): MembraneMolecularAssembly {
       const mat = ref.mesh.material as THREE.MeshPhysicalMaterial;
       const baseC = ref.isAlpha ? alphaBase : betaBase;
       const isTarget = ref.isAlpha ? alphaHit : betaHit;
+      const spHover = ref.isAlpha ? alphaHover : betaHover;
       const weak =
         ((ref.isAlpha && (alphaHit || gene === 'ANK1')) || (!ref.isAlpha && betaHit)) &&
         ref.compromised;
+      tmpEmissiveC.copy(baseC).lerp(hoverWarm, 0.14);
+      mat.roughness = 0.4 - 0.14 * spHover;
+      mat.clearcoat = 0.14 + 0.5 * spHover;
 
       if (isTarget && weak) {
-        mat.color.copy(baseC);
-        mat.opacity = (0.24 + 0.28 * pulse) * reveal;
+        mat.color.copy(baseC).lerp(hoverWarm, 0.1 * spHover);
+        mat.opacity = Math.min(0.9, (0.24 + 0.28 * pulse + 0.24 * spHover) * reveal);
         mat.depthWrite = false;
-        mat.emissive.copy(baseC);
-        mat.emissiveIntensity = 0.42 * pulse;
+        mat.emissive.copy(spHover > 0.05 ? tmpEmissiveC : baseC);
+        mat.emissiveIntensity = Math.max(0.42 * pulse, 0.34 * spHover);
       } else if (isTarget) {
-        mat.color.copy(baseC);
+        mat.color.copy(baseC).lerp(hoverWarm, 0.12 * spHover);
         mat.opacity = 0.98 * reveal;
         mat.depthWrite = reveal > 0.85;
-        mat.emissive.copy(baseC);
-        mat.emissiveIntensity = 0.16;
+        mat.emissive.copy(spHover > 0.05 ? tmpEmissiveC : baseC);
+        mat.emissiveIntensity = Math.max(0.16, 0.34 * spHover);
       } else if (isDefective) {
-        mat.color.copy(baseC).lerp(mutedStone, 0.45);
+        mat.color
+          .copy(baseC)
+          .lerp(mutedStone, 0.45 * (1 - spHover))
+          .lerp(hoverWarm, 0.12 * spHover);
         mat.opacity = 0.96 * reveal;
         mat.depthWrite = reveal > 0.85;
-        mat.emissive.set('#000000');
-        mat.emissiveIntensity = 0;
+        if (spHover > 0.005) {
+          mat.emissive.copy(tmpEmissiveC);
+          mat.emissiveIntensity = 0.34 * spHover;
+        } else {
+          mat.emissive.set('#000000');
+          mat.emissiveIntensity = 0;
+        }
       } else {
-        mat.color.copy(baseC);
+        mat.color.copy(baseC).lerp(hoverWarm, 0.12 * spHover);
         mat.opacity = 0.98 * reveal;
         mat.depthWrite = reveal > 0.85;
-        mat.emissive.set('#000000');
-        mat.emissiveIntensity = 0;
+        if (spHover > 0.005) {
+          mat.emissive.copy(tmpEmissiveC);
+          mat.emissiveIntensity = 0.34 * spHover;
+        } else {
+          mat.emissive.set('#000000');
+          mat.emissiveIntensity = 0;
+        }
       }
     });
   };
