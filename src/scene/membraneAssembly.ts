@@ -24,6 +24,11 @@ export interface HeroFocusFrame {
   subunitTarget: THREE.Vector3; // subtle gene-specific focus point at 10 nm
 }
 
+export interface PinAnchorPair {
+  target: THREE.Vector3; // exact 3D point ON the anatomical structure (leader dot terminates here)
+  label: THREE.Vector3; // floating label pill anchor in nearby open space
+}
+
 export interface MembraneMolecularAssembly {
   root: THREE.Group;
   update: (params: {
@@ -33,10 +38,10 @@ export interface MembraneMolecularAssembly {
     shape: RbcShapeParams;
     elapsed: number;
   }) => void;
-  /** Overview callout anchors (shown at 40 nm Mesh scale) */
-  pinAnchors: Record<string, THREE.Vector3>;
-  /** Tight anatomical subunit anchors on the single Hero Complex (shown at 10 nm Complex scale) */
-  closePinAnchors: Record<string, THREE.Vector3>;
+  /** Overview callout target/label pairs (shown at 40 nm Mesh scale) */
+  pinAnchors: Record<string, PinAnchorPair>;
+  /** Tight anatomical subunit target/label pairs on the single Hero Complex (shown at 10 nm scale) */
+  closePinAnchors: Record<string, PinAnchorPair>;
   /** Returns exact live RBC-local framing target for the 10 nm Protein Complex camera */
   getHeroFocus: (gene: GeneId, out: HeroFocusFrame) => void;
   pickables: { mesh: THREE.Object3D; gene: GeneId }[];
@@ -458,34 +463,38 @@ export function createMembraneAssembly(): MembraneMolecularAssembly {
   // as our Hero Complex for the 10 nm Protein Complex close-up dive!
   const HERO_IDX = 4;
 
-  // Overview callout pin specs (shown at 40 nm Mesh scale)
-  const pinSpecs: Record<string, { unitDir: THREE.Vector3; normalOffset: number }> = {
-    bilayer: { unitDir: tangentToUnitDir(-0.46, 0.25), normalOffset: 0.04 },
-    band3: { unitDir: anchorClusters[4].unitDir.clone(), normalOffset: 0.055 },
-    ankyrin: { unitDir: anchorClusters[5].unitDir.clone(), normalOffset: -0.095 },
-    protein42: { unitDir: anchorClusters[0].unitDir.clone(), normalOffset: -0.06 },
-    spectrin: { unitDir: tangentToUnitDir(-0.18, -0.14), normalOffset: specOffset },
-    junction41: { unitDir: vertexUnitDirs[3].clone(), normalOffset: specOffset },
+  const makePinPair = (): PinAnchorPair => ({
+    target: new THREE.Vector3(),
+    label: new THREE.Vector3(),
+  });
+
+  // Overview callout pin target/label pairs (shown at 40 nm Mesh scale)
+  const bilayerPinUnit = tangentToUnitDir(0.42, -0.12);
+  const pinAnchors: Record<string, PinAnchorPair> = {
+    bilayer: makePinPair(),
+    band3: makePinPair(),
+    ankyrin: makePinPair(),
+    protein42: makePinPair(),
+    spectrin: makePinPair(),
+    junction41: makePinPair(),
   };
 
-  const pinAnchors: Record<string, THREE.Vector3> = {
-    bilayer: new THREE.Vector3(),
-    band3: new THREE.Vector3(),
-    ankyrin: new THREE.Vector3(),
-    protein42: new THREE.Vector3(),
-    spectrin: new THREE.Vector3(),
-    junction41: new THREE.Vector3(),
+  // Close-up subunit target/label pairs on the single Hero Complex (shown at 10 nm Complex scale!)
+  const closePinAnchors: Record<string, PinAnchorPair> = {
+    closeBand3: makePinPair(),
+    closeGpa: makePinPair(),
+    closeAnkyrin: makePinPair(),
+    closeProtein42: makePinPair(),
+    closeAlphaSpec: makePinPair(),
+    closeBetaSpec: makePinPair(),
   };
 
-  // Close-up subunit pin anchors on the single Hero Complex (shown at 10 nm Complex scale!)
-  const closePinAnchors: Record<string, THREE.Vector3> = {
-    closeBand3: new THREE.Vector3(),
-    closeGpa: new THREE.Vector3(),
-    closeAnkyrin: new THREE.Vector3(),
-    closeProtein42: new THREE.Vector3(),
-    closeAlphaSpec: new THREE.Vector3(),
-    closeBetaSpec: new THREE.Vector3(),
-  };
+  // Exact live spine sample points captured during conformal deformation
+  const overviewSpecPt = new THREE.Vector3();
+  const idealLeftSpec = new THREE.Vector3();
+  const idealRightSpec = new THREE.Vector3();
+  const snappedBetaSpec = new THREE.Vector3();
+  const snappedAlphaSpec = new THREE.Vector3();
 
   // -------------------------------------------------------------------------
   // CONFORMAL SURFACE DEFORMATION
@@ -573,8 +582,39 @@ export function createMembraneAssembly(): MembraneMolecularAssembly {
       j.group.quaternion.setFromUnitVectors(upY, j.normal);
     });
 
-    // 3. Conformally deform coiled-coil Spectrin cables in-place
-    spectrinRefs.forEach((ref) => {
+    // 3. Project Band 3, GPA, Ankyrin-1, and Protein 4.2 clusters first so we know Hero Complex frame
+    anchorClusters.forEach((c) => {
+      evalRbcSurfaceFrame(c.unitDir, staticShape, c.surfPos, c.surfNormal);
+      c.quat.setFromUnitVectors(upY, c.surfNormal);
+      tmpSpin.setFromAxisAngle(upY, c.tangentAngle);
+      c.quat.multiply(tmpSpin);
+
+      c.band3.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.018);
+      c.band3.quaternion.copy(c.quat);
+
+      c.gpa.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.018);
+      c.gpa.quaternion.copy(c.quat);
+
+      c.ankyrin.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.095);
+      c.ankyrin.quaternion.copy(c.quat);
+
+      c.protein42.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.058);
+      c.protein42.quaternion.copy(c.quat);
+    });
+
+    // Ideal unobstructed left/right regions flanking the Hero Complex for snapping Spectrin dots
+    const hero = anchorClusters[HERO_IDX];
+    const heroLocalToRbc = (lx: number, ly: number, lz: number, out: THREE.Vector3) => {
+      tmpLocal.set(lx, ly, lz).applyQuaternion(hero.quat);
+      out.copy(hero.surfPos).add(tmpLocal);
+    };
+    heroLocalToRbc(0.072, -0.142, -0.06, idealLeftSpec);
+    heroLocalToRbc(-0.082, -0.142, -0.075, idealRightSpec);
+    let bestBetaDistSq = Infinity;
+    let bestAlphaDistSq = Infinity;
+
+    // 4. Conformally deform coiled-coil Spectrin cables in-place & snap close-up Spectrin dots
+    spectrinRefs.forEach((ref, refIdx) => {
       const uA = junctions[ref.iA].unitDir;
       const uB = junctions[ref.iB].unitDir;
 
@@ -599,6 +639,31 @@ export function createMembraneAssembly(): MembraneMolecularAssembly {
           spineNorms[s],
           Math.sin(braid) * 0.0055 * env - 0.011 * env
         );
+      }
+
+      // Capture exact deformed coiled-coil spine coordinates for leader-line targets
+      const edgeIdx = Math.floor(refIdx / 2);
+      if (edgeIdx === 2 && !ref.isAlpha) {
+        overviewSpecPt.copy(spinePts[Math.round(ref.tubularSegs * 0.52)]);
+      }
+      // Snap close-up β-Spectrin (left) and α-Spectrin (right) dots directly onto
+      // the flanking outer hex ring cables (edges 9 & 10 meeting behind the Hero Complex)!
+      if (edgeIdx === 9 || edgeIdx === 10) {
+        for (let s = 6; s <= ref.tubularSegs - 6; s += 2) {
+          if (!ref.isAlpha) {
+            const dSq = spinePts[s].distanceToSquared(idealLeftSpec);
+            if (dSq < bestBetaDistSq) {
+              bestBetaDistSq = dSq;
+              snappedBetaSpec.copy(spinePts[s]);
+            }
+          } else {
+            const dSq = spinePts[s].distanceToSquared(idealRightSpec);
+            if (dSq < bestAlphaDistSq) {
+              bestAlphaDistSq = dSq;
+              snappedAlphaSpec.copy(spinePts[s]);
+            }
+          }
+        }
       }
 
       const posAttr = ref.mesh.geometry.attributes.position as THREE.BufferAttribute;
@@ -628,48 +693,67 @@ export function createMembraneAssembly(): MembraneMolecularAssembly {
       ref.mesh.geometry.computeVertexNormals();
     });
 
-    // 4. Project Band 3, GPA, Ankyrin-1, and Protein 4.2 clusters
-    anchorClusters.forEach((c) => {
-      evalRbcSurfaceFrame(c.unitDir, staticShape, c.surfPos, c.surfNormal);
-      c.quat.setFromUnitVectors(upY, c.surfNormal);
-      tmpSpin.setFromAxisAngle(upY, c.tangentAngle);
-      c.quat.multiply(tmpSpin);
+    // 5. Project 40 nm overview callout target & label pairs
+    evalRbcSurfaceFrame(bilayerPinUnit, staticShape, tmpPos, tmpNorm);
+    pinAnchors.bilayer.target.copy(tmpPos).addScaledVector(tmpNorm, 0.008);
+    pinAnchors.bilayer.label
+      .copy(tmpPos)
+      .addScaledVector(tmpNorm, 0.062)
+      .addScaledVector(T1, 0.02);
 
-      c.band3.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.018);
-      c.band3.quaternion.copy(c.quat);
+    const c4 = anchorClusters[4];
+    pinAnchors.band3.target.copy(c4.surfPos).addScaledVector(c4.surfNormal, 0.014);
+    tmpLocal.set(0.095, 0.035, 0.015).applyQuaternion(c4.quat);
+    pinAnchors.band3.label.copy(c4.surfPos).add(tmpLocal);
 
-      c.gpa.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.018);
-      c.gpa.quaternion.copy(c.quat);
+    const c5 = anchorClusters[5];
+    pinAnchors.ankyrin.target.copy(c5.surfPos).addScaledVector(c5.surfNormal, -0.095);
+    tmpLocal.set(-0.075, -0.095, 0.025).applyQuaternion(c5.quat);
+    pinAnchors.ankyrin.label.copy(c5.surfPos).add(tmpLocal);
 
-      c.ankyrin.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.095);
-      c.ankyrin.quaternion.copy(c.quat);
+    const c0 = anchorClusters[0];
+    tmpLocal.set(0.028, -0.056, 0.018).applyQuaternion(c0.quat);
+    pinAnchors.protein42.target.copy(c0.surfPos).add(tmpLocal);
+    tmpLocal.set(0.092, -0.042, 0.045).applyQuaternion(c0.quat);
+    pinAnchors.protein42.label.copy(c0.surfPos).add(tmpLocal);
 
-      c.protein42.position.copy(c.surfPos).addScaledVector(c.surfNormal, -0.058);
-      c.protein42.quaternion.copy(c.quat);
-    });
+    pinAnchors.spectrin.target.copy(overviewSpecPt);
+    pinAnchors.spectrin.label.copy(overviewSpecPt).addScaledVector(junctions[0].normal, -0.068);
 
-    // 5. Project 40 nm overview callout anchors
-    Object.entries(pinSpecs).forEach(([id, spec]) => {
-      evalRbcSurfaceFrame(spec.unitDir, staticShape, tmpPos, tmpNorm);
-      pinAnchors[id].copy(tmpPos).addScaledVector(tmpNorm, spec.normalOffset);
-    });
+    const j3 = junctions[3];
+    pinAnchors.junction41.target.copy(j3.pos).addScaledVector(j3.normal, specOffset);
+    pinAnchors.junction41.label.copy(j3.pos).addScaledVector(j3.normal, specOffset - 0.068);
 
-    // 6. Project 10 nm close-up subunit anchors right onto Hero Complex (anchorClusters[HERO_IDX])
-    const hero = anchorClusters[HERO_IDX];
-    const heroLocalToRbc = (lx: number, ly: number, lz: number, target: THREE.Vector3) => {
-      tmpLocal.set(lx, ly, lz).applyQuaternion(hero.quat);
-      target.copy(hero.surfPos).add(tmpLocal);
-    };
+    // 6. Project 10 nm close-up subunit target & label pairs on Hero Complex (anchorClusters[HERO_IDX])
+    // Band 3 Dimer: dot directly on upper-left transmembrane lobe, pill floating upper-left
+    heroLocalToRbc(0.013, 0.008, 0.012, closePinAnchors.closeBand3.target);
+    heroLocalToRbc(0.068, 0.036, 0.014, closePinAnchors.closeBand3.label);
 
-    // Balanced 2-column anatomical callout anchors framing the Hero Complex cleanly:
-    // Left (+lx): Band 3 Dimer -> Protein 4.2 Clasp -> β-Spectrin Coil
-    // Right (-lx): Glycophorin A -> Ankyrin-1 Arch -> α-Spectrin Coil
-    heroLocalToRbc(0.034, 0.032, 0.012, closePinAnchors.closeBand3);
-    heroLocalToRbc(-0.046, 0.026, -0.006, closePinAnchors.closeGpa);
-    heroLocalToRbc(-0.044, -0.092, 0.022, closePinAnchors.closeAnkyrin);
-    heroLocalToRbc(0.048, -0.050, 0.018, closePinAnchors.closeProtein42);
-    heroLocalToRbc(-0.068, -0.142, -0.010, closePinAnchors.closeAlphaSpec);
-    heroLocalToRbc(0.064, -0.142, 0.012, closePinAnchors.closeBetaSpec);
+    // Glycophorin A: dot directly on right rosewood GPA cap/stalk, pill floating cleanly right below top bar
+    heroLocalToRbc(-0.031, 0.015, -0.006, closePinAnchors.closeGpa.target);
+    heroLocalToRbc(-0.078, 0.012, -0.004, closePinAnchors.closeGpa.label);
+
+    // Protein 4.2 Clasp: dot dead-center on emerald clasp, pill floating left
+    heroLocalToRbc(0.028, -0.054, 0.018, closePinAnchors.closeProtein42.target);
+    heroLocalToRbc(0.082, -0.050, 0.022, closePinAnchors.closeProtein42.label);
+
+    // Ankyrin-1 Solenoid Arch: dot directly on crimson helical ridge, pill floating right
+    heroLocalToRbc(-0.004, -0.092, 0.016, closePinAnchors.closeAnkyrin.target);
+    heroLocalToRbc(-0.068, -0.088, 0.024, closePinAnchors.closeAnkyrin.label);
+
+    // β-Spectrin (left blue coil) & α-Spectrin (right violet coil): glued directly onto real strands!
+    const heroLocalX = tmpU.set(1, 0, 0).applyQuaternion(hero.quat);
+    closePinAnchors.closeBetaSpec.target.copy(snappedBetaSpec);
+    closePinAnchors.closeBetaSpec.label
+      .copy(snappedBetaSpec)
+      .addScaledVector(hero.surfNormal, -0.032)
+      .addScaledVector(heroLocalX, -0.012);
+
+    closePinAnchors.closeAlphaSpec.target.copy(snappedAlphaSpec);
+    closePinAnchors.closeAlphaSpec.label
+      .copy(snappedAlphaSpec)
+      .addScaledVector(hero.surfNormal, -0.042)
+      .addScaledVector(heroLocalX, 0.008);
   };
 
   // Expose live Hero Complex focus point & gene-targeted subunit offset for 10 nm camera

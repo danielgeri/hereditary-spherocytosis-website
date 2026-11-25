@@ -39,6 +39,13 @@ const PROTEIN_SHORT_NAME: Record<GeneId, string> = {
   EPB42: 'Protein 4.2',
 };
 
+interface LeaderElRefs {
+  group: SVGGElement | null;
+  halo: SVGLineElement | null;
+  line: SVGLineElement | null;
+  dot: SVGCircleElement | null;
+}
+
 export const CellSandbox: React.FC<CellSandboxProps> = ({
   depth,
   dive,
@@ -51,17 +58,32 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<RbcSceneEngine | null>(null);
   const pinElsRef = useRef<Record<string, HTMLElement | null>>({});
+  const leaderElsRef = useRef<Record<string, LeaderElRefs>>({});
   const hoverTipRef = useRef<HTMLDivElement | null>(null);
 
   const [isolateMembrane, setIsolateMembrane] = useState<boolean>(false);
   const [paused, setPaused] = useState<boolean>(false);
   const [hoveredGene, setHoveredGene] = useState<GeneId | null>(null);
+  const [pinHoveredGene, setPinHoveredGene] = useState<GeneId | null>(null);
+
+  const effectiveHoveredGene = hoveredGene ?? pinHoveredGene;
 
   // Keep latest callbacks in refs so Three.js event listeners never go stale
   const diveChangeRef = useRef(onDiveChange);
   const geneChangeRef = useRef(onGeneChange);
   diveChangeRef.current = onDiveChange;
   geneChangeRef.current = onGeneChange;
+
+  const handlePinMouseEnter = useCallback((gene?: GeneId) => {
+    if (!gene) return;
+    setPinHoveredGene(gene);
+    engineRef.current?.setExternalHover(gene);
+  }, []);
+
+  const handlePinMouseLeave = useCallback(() => {
+    setPinHoveredGene(null);
+    engineRef.current?.setExternalHover(null);
+  }, []);
 
   const handleProteinHover = useCallback((info: ProteinHoverInfo | null) => {
     const nextGene = info?.gene ?? null;
@@ -81,15 +103,45 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
   const handlePinsUpdate = useCallback((pins: ProjectedPin[]) => {
     for (const pin of pins) {
       const el = pinElsRef.current[pin.id];
-      if (!el) continue;
-      if (pin.visible) {
-        el.style.opacity = '1';
-        el.style.pointerEvents = pin.id === 'diveHotspot' ? 'auto' : 'none';
-        el.style.left = `${pin.x}%`;
-        el.style.top = `${pin.y}%`;
-      } else {
-        el.style.opacity = '0';
-        el.style.pointerEvents = 'none';
+      const leader = leaderElsRef.current[pin.id];
+      if (el) {
+        if (pin.visible) {
+          el.style.opacity = '1';
+          const isInteractive = pin.id === 'diveHotspot' || el.dataset.clickable === 'true';
+          el.style.pointerEvents = isInteractive ? 'auto' : 'none';
+          el.style.left = `${pin.x}%`;
+          el.style.top = `${pin.y}%`;
+        } else {
+          el.style.opacity = '0';
+          el.style.pointerEvents = 'none';
+        }
+      }
+      if (leader?.group) {
+        if (pin.visible && pin.tx !== undefined && pin.ty !== undefined) {
+          leader.group.style.opacity = '1';
+          const x1 = `${pin.x}%`;
+          const y1 = `${pin.y}%`;
+          const x2 = `${pin.tx}%`;
+          const y2 = `${pin.ty}%`;
+          if (leader.halo) {
+            leader.halo.setAttribute('x1', x1);
+            leader.halo.setAttribute('y1', y1);
+            leader.halo.setAttribute('x2', x2);
+            leader.halo.setAttribute('y2', y2);
+          }
+          if (leader.line) {
+            leader.line.setAttribute('x1', x1);
+            leader.line.setAttribute('y1', y1);
+            leader.line.setAttribute('x2', x2);
+            leader.line.setAttribute('y2', y2);
+          }
+          if (leader.dot) {
+            leader.dot.setAttribute('cx', x2);
+            leader.dot.setAttribute('cy', y2);
+          }
+        } else {
+          leader.group.style.opacity = '0';
+        }
       }
     }
   }, []);
@@ -272,6 +324,20 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
     [depth]
   );
 
+  // Clear external pin hover when pulling back out of molecular range
+  useEffect(() => {
+    if (dive < 0.34 && pinHoveredGene !== null) {
+      setPinHoveredGene(null);
+      engineRef.current?.setExternalHover(null);
+    }
+  }, [dive, pinHoveredGene]);
+
+  // All leader-line callouts combined for crisp SVG leader rendering
+  const allLeaderPins = useMemo(
+    () => [...molecularPins, ...closePins],
+    [molecularPins, closePins]
+  );
+
   return (
     <section id="explorer" className="stage-hero" aria-label="Interactive 3D Red Blood Cell">
       {/* Full-Bleed 3D WebGL Canvas */}
@@ -302,6 +368,50 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
 
       {/* 3D-to-2D Projected Interactive Overlay Layer */}
       <div className="pins-layer">
+        {/* Crisp Scientific SVG Leader Lines & Target Dots pointing directly onto each 3D structure */}
+        <svg className="pins-leaders" aria-hidden="true">
+          {allLeaderPins.map((p) => {
+            const isHovered = Boolean(effectiveHoveredGene && p.genes?.includes(effectiveHoveredGene));
+            const ensureRef = () => {
+              if (!leaderElsRef.current[p.id]) {
+                leaderElsRef.current[p.id] = { group: null, halo: null, line: null, dot: null };
+              }
+              return leaderElsRef.current[p.id];
+            };
+            return (
+              <g
+                key={p.id}
+                ref={(el) => {
+                  ensureRef().group = el;
+                }}
+                className={`pin-leader ${isHovered ? 'is-hovered' : ''}`}
+                style={{ opacity: 0 }}
+              >
+                <line
+                  ref={(el) => {
+                    ensureRef().halo = el;
+                  }}
+                  className="pin-leader__halo"
+                />
+                <line
+                  ref={(el) => {
+                    ensureRef().line = el;
+                  }}
+                  className="pin-leader__line"
+                />
+                <circle
+                  ref={(el) => {
+                    ensureRef().dot = el;
+                  }}
+                  className="pin-leader__dot"
+                  r={isHovered ? 5 : 3.8}
+                  fill={p.accent ?? '#57504A'}
+                />
+              </g>
+            );
+          })}
+        </svg>
+
         {/* On-cell breathing reticle hotspot: click directly on the living cell to drill down! */}
         <button
           type="button"
@@ -320,34 +430,37 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
           </span>
         </button>
 
-        {/* 40 nm Mesh Overview Callout Labels */}
-        {molecularPins.map((p) => {
-          const isHovered = Boolean(hoveredGene && p.genes?.includes(hoveredGene));
+        {/* 40 nm Overview & 10 nm Subunit Callout Labels (gene-linked pills highlight & click directly!) */}
+        {allLeaderPins.map((p) => {
+          const primaryGene = p.genes?.[0];
+          const isHovered = Boolean(effectiveHoveredGene && p.genes?.includes(effectiveHoveredGene));
+          if (primaryGene) {
+            return (
+              <button
+                key={p.id}
+                type="button"
+                data-clickable="true"
+                ref={(el) => {
+                  pinElsRef.current[p.id] = el;
+                }}
+                className={`pin-tag pin-tag--interactive ${isHovered ? 'is-hovered' : ''}`}
+                onMouseEnter={() => handlePinMouseEnter(primaryGene)}
+                onMouseLeave={handlePinMouseLeave}
+                onClick={() => onGeneChange(primaryGene, false)}
+                aria-label={`Inspect ${p.label}`}
+              >
+                <span className="pin-tag__dot" style={{ background: p.accent ?? '#57504A' }} />
+                <span>{p.label}</span>
+              </button>
+            );
+          }
           return (
             <div
               key={p.id}
               ref={(el) => {
                 pinElsRef.current[p.id] = el;
               }}
-              className={`pin-tag ${isHovered ? 'is-hovered' : ''}`}
-              aria-hidden="true"
-            >
-              <span className="pin-tag__dot" style={{ background: p.accent ?? '#57504A' }} />
-              <span>{p.label}</span>
-            </div>
-          );
-        })}
-
-        {/* 10 nm Protein Complex Subunit Labels */}
-        {closePins.map((p) => {
-          const isHovered = Boolean(hoveredGene && p.genes?.includes(hoveredGene));
-          return (
-            <div
-              key={p.id}
-              ref={(el) => {
-                pinElsRef.current[p.id] = el;
-              }}
-              className={`pin-tag ${isHovered ? 'is-hovered' : ''}`}
+              className="pin-tag"
               aria-hidden="true"
             >
               <span className="pin-tag__dot" style={{ background: p.accent ?? '#57504A' }} />
@@ -510,7 +623,7 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
               <button
                 key={g.id}
                 type="button"
-                className={`gene-pill ${selectedGene === g.id ? 'is-active' : ''} ${hoveredGene === g.id ? 'is-hovered' : ''}`}
+                className={`gene-pill ${selectedGene === g.id ? 'is-active' : ''} ${effectiveHoveredGene === g.id ? 'is-hovered' : ''}`}
                 onClick={() => onGeneChange(g.id, true)}
               >
                 <span className="gene-pill__dot" style={{ backgroundColor: g.color }} />

@@ -27,8 +27,10 @@ export interface SceneState {
 
 export interface ProjectedPin {
   id: string;
-  x: number; // 0..100 %
-  y: number; // 0..100 %
+  x: number; // label pill X (0..100 %)
+  y: number; // label pill Y (0..100 %)
+  tx?: number; // exact 3D anatomical target X (0..100 %)
+  ty?: number; // exact 3D anatomical target Y (0..100 %)
   visible: boolean;
 }
 
@@ -74,6 +76,7 @@ export class RbcSceneEngine {
   private pointerNdc = new THREE.Vector2();
   private lastPinchDist: number | null = null;
   private hoveredGene: GeneId | null = null;
+  private externalHoveredGene: GeneId | null = null;
   private isPointerDown = false;
 
   // Smooth interpolated state
@@ -465,6 +468,10 @@ export class RbcSceneEngine {
     this.applyDiveCamera(false);
   }
 
+  public setExternalHover(gene: GeneId | null): void {
+    this.externalHoveredGene = gene;
+  }
+
   private updateGeometryAndAperture(dt: number): void {
     const gene = this.state.selectedGene;
     const breathWeight = 1.0 - THREE.MathUtils.smoothstep(this.curDive, 0.04, 0.16);
@@ -526,7 +533,7 @@ export class RbcSceneEngine {
 
     this.membraneAssembly.update({
       gene,
-      hoveredGene: this.hoveredGene,
+      hoveredGene: this.hoveredGene ?? this.externalHoveredGene,
       dive: this.curDive,
       shape: shapeParams,
       elapsed: this.elapsed,
@@ -661,48 +668,65 @@ export class RbcSceneEngine {
     const isPortrait = this.camera.aspect < 1.0;
 
     // Safe screen rectangle keeping callout pills clear of top utility HUD, right scale rail, and bottom dock
-    const minX = isPortrait ? 6 : 6;
-    const maxX = isPortrait ? 94 : 86;
+    const minX = isPortrait ? 4 : 5;
+    const maxX = isPortrait ? 96 : 86;
     const minY = 9;
     const maxY = isPortrait ? 65 : 71;
 
-    const projectWorld = (
-      id: string,
-      worldPos: THREE.Vector3,
-      allow: boolean,
-      clampHorizontal = false
-    ) => {
+    const projectHotspot = (id: string, worldPos: THREE.Vector3, allow: boolean) => {
       const v = worldPos.clone().project(this.camera);
-      const rawX = (v.x * 0.5 + 0.5) * 100;
-      const rawY = (-v.y * 0.5 + 0.5) * 100;
-      const inSafeBox =
-        allow && v.z < 1 && rawX >= minX && rawX <= maxX && rawY >= minY && rawY <= maxY;
-      const x = clampHorizontal
-        ? THREE.MathUtils.clamp(rawX, isPortrait ? 19 : 10, isPortrait ? 81 : 83)
-        : rawX;
+      const x = (v.x * 0.5 + 0.5) * 100;
+      const y = (-v.y * 0.5 + 0.5) * 100;
+      const visible = allow && v.z < 1 && x >= minX && x <= maxX && y >= minY && y <= maxY;
+      pins.push({ id, x, y, visible });
+    };
+
+    const projectLeaderPin = (
+      id: string,
+      localTarget: THREE.Vector3,
+      localLabel: THREE.Vector3,
+      allow: boolean
+    ) => {
+      const wt = localTarget.clone().applyMatrix4(this.heroPivot.matrixWorld);
+      const wl = localLabel.clone().applyMatrix4(this.heroPivot.matrixWorld);
+      const vt = wt.project(this.camera);
+      const vl = wl.project(this.camera);
+
+      const tx = (vt.x * 0.5 + 0.5) * 100;
+      const ty = (-vt.y * 0.5 + 0.5) * 100;
+      const rawX = (vl.x * 0.5 + 0.5) * 100;
+      const rawY = (-vl.y * 0.5 + 0.5) * 100;
+
+      const targetOnScreen = vt.z < 1 && tx >= 3 && tx <= 97 && ty >= 4 && ty <= 76;
+      const labelInSafeBox =
+        vl.z < 1 && rawX >= minX && rawX <= maxX && rawY >= minY && rawY <= maxY;
+
+      const x = THREE.MathUtils.clamp(rawX, isPortrait ? 20 : 10, isPortrait ? 80 : 82);
+      const y = THREE.MathUtils.clamp(rawY, minY + 1, maxY);
+
       pins.push({
         id,
         x,
-        y: rawY,
-        visible: inSafeBox,
+        y,
+        tx,
+        ty,
+        visible: allow && targetOnScreen && labelInSafeBox,
       });
     };
 
     // 1. Macro Whole-Cell reticle hotspot (dive < 0.24)
-    projectWorld('diveHotspot', this.apertureWorldPos, this.curDive < 0.24, false);
+    projectHotspot('diveHotspot', this.apertureWorldPos, this.curDive < 0.24);
 
     // 2. 40 nm Mesh overview pins (dive between 0.55 and 0.88)
     const showMeshPins = this.curDive > 0.55 && this.curDive < 0.88;
-    Object.entries(this.membraneAssembly.pinAnchors).forEach(([id, localPos]) => {
-      const worldP = localPos.clone().applyMatrix4(this.heroPivot.matrixWorld);
-      projectWorld(id, worldP, showMeshPins, true);
+    Object.entries(this.membraneAssembly.pinAnchors).forEach(([id, pair]) => {
+      projectLeaderPin(id, pair.target, pair.label, showMeshPins);
     });
 
     // 3. 10 nm Protein Complex subunit pins (dive >= 0.88)
     const showClosePins = this.curDive >= 0.88;
-    Object.entries(this.membraneAssembly.closePinAnchors).forEach(([id, localPos]) => {
-      const worldP = localPos.clone().applyMatrix4(this.heroPivot.matrixWorld);
-      projectWorld(id, worldP, showClosePins, true);
+    Object.entries(this.membraneAssembly.closePinAnchors).forEach(([id, pair]) => {
+      projectLeaderPin(id, pair.target, pair.label, showClosePins);
     });
 
     this.callbacks.onPinsUpdate(pins);
