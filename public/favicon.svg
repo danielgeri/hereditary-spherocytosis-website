@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="42%" cy="32%" r="76%">
+      <stop offset="0%" stop-color="#FAF8F4" />
+      <stop offset="100%" stop-color="#EFE8DD" />
+    </radialGradient>
+    <radialGradient id="shadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3A1018" stop-opacity="0.24" />
+      <stop offset="65%" stop-color="#3A1018" stop-opacity="0.09" />
+      <stop offset="100%" stop-color="#3A1018" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="rbcBody" cx="38%" cy="32%" r="68%">
+      <stop offset="0%" stop-color="#DF5258" />
+      <stop offset="36%" stop-color="#B12434" />
+      <stop offset="76%" stop-color="#7B1322" />
+      <stop offset="100%" stop-color="#4A0913" />
+    </radialGradient>
+    <radialGradient id="dimple" cx="54%" cy="56%" r="56%">
+      <stop offset="0%" stop-color="#EE7A74" stop-opacity="0.72" />
+      <stop offset="48%" stop-color="#A12030" stop-opacity="0.52" />
+      <stop offset="86%" stop-color="#5C0D19" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#5C0D19" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="spec" cx="34%" cy="24%" r="42%">
+      <stop offset="0%" stop-color="#FFF7F4" stop-opacity="0.52" />
+      <stop offset="48%" stop-color="#FFDAD6" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#FFDAD6" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <ellipse cx="262" cy="346" rx="164" ry="82" fill="url(#shadow)" />
+  <g transform="translate(256 248) rotate(-14)">
+    <ellipse cx="0" cy="0" rx="178" ry="144" fill="url(#rbcBody)" />
+    <ellipse cx="4" cy="4" rx="108" ry="82" fill="url(#dimple)" />
+    <ellipse cx="-24" cy="-34" rx="136" ry="96" fill="url(#spec)" />
+  </g>
+</svg>

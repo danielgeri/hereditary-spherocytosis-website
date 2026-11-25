@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, ChevronDown } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronDown, Download } from 'lucide-react';
 import {
   DIAGNOSTIC_TESTS,
   GENES,
@@ -8,6 +8,7 @@ import {
   ReadingDepth,
   SPLEEN_ROLE_TABLE,
 } from '../data/hsContent';
+import { usePwaInstall } from '../pwa';
 
 interface EditorialSectionsProps {
   depth: ReadingDepth;
@@ -16,6 +17,7 @@ interface EditorialSectionsProps {
 
 export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJumpToCell }) => {
   const onlyMutatedGenes = GENES.filter((g) => g.id !== 'healthy');
+  const { canPromptInstall, isStandalone, isIosSafari, triggerInstall } = usePwaInstall();
 
   return (
     <div className="editorial-body">
@@ -459,6 +461,23 @@ export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJ
               Grounded in Kalfa TA, Means RT Jr, Tirnauer JS. <em>Hereditary spherocytosis.</em>{' '}
               UpToDate Topic 7079 v47.0 (literature review current through Nov 2024).
             </p>
+            <div className="footer-pwa">
+              {isStandalone ? (
+                <span className="pwa-badge">
+                  <Check size={13} />
+                  <span>Installed App · Offline Ready</span>
+                </span>
+              ) : canPromptInstall ? (
+                <button type="button" className="pwa-install-btn" onClick={triggerInstall}>
+                  <Download size={13} />
+                  <span>Install App (Offline Ready)</span>
+                </button>
+              ) : isIosSafari ? (
+                <span className="pwa-hint">
+                  Install as an app: tap <strong>Share</strong> → <strong>Add to Home Screen</strong>
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
       </footer>
