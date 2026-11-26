@@ -1574,6 +1574,26 @@ input[type='range']:focus-visible {
   color: var(--ink-muted);
 }
 
+.footer-contact {
+  margin: 0.7rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--ink-muted);
+}
+
+.footer-contact a {
+  color: var(--ink-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  transition: color 140ms ease, text-decoration-color 140ms ease;
+}
+
+.footer-contact a:hover {
+  color: var(--accent-crimson);
+  text-decoration-color: var(--accent-crimson);
+}
+
 .footer-pwa {
   margin-top: 0.85rem;
 }

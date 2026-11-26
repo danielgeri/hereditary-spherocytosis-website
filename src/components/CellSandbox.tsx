@@ -10,6 +10,7 @@ import {
   Sparkles,
   ZoomIn,
 } from 'lucide-react';
+import { trackEventOnce } from '../analytics';
 import { GENES, GeneId, ReadingDepth } from '../data/hsContent';
 import { ProjectedPin, ProteinHoverInfo, RbcSceneEngine } from '../scene/RbcSceneEngine';
 
@@ -526,7 +527,13 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
             type="button"
             className={`hud-btn hud-btn--isolate ${isolateMembrane ? 'is-active' : ''}`}
             aria-pressed={isolateMembrane}
-            onClick={() => setIsolateMembrane((v) => !v)}
+            onClick={() =>
+              setIsolateMembrane((v) => {
+                const next = !v;
+                if (next) trackEventOnce('mode/isolate-membrane', 'Isolated Membrane');
+                return next;
+              })
+            }
             title="Hide the outer red blood cell to inspect only the membrane cross-section from all angles"
           >
             <Layers size={14} />

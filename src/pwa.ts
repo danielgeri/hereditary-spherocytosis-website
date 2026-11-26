@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { trackEventOnce } from './analytics';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -23,8 +24,16 @@ export function registerPwa(): void {
 
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
+    trackEventOnce('pwa/installed', 'Installed PWA');
     notifyListeners();
   });
+
+  if (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
+  ) {
+    trackEventOnce('pwa/standalone-launch', 'Launched Installed PWA');
+  }
 
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
     window.addEventListener('load', () => {

@@ -455,6 +455,24 @@ export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJ
               not medical advice and should not replace guidance from a qualified hematologist or
               pediatrician.
             </p>
+            <p className="footer-contact">
+              Site feedback &amp; corrections (non-medical):{' '}
+              <a
+                href="https://github.com/danielgeri"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                GitHub (@danielgeri)
+              </a>
+              <span aria-hidden="true"> · </span>
+              <a
+                href="https://github.com/danielgeri/hereditary-spherocytosis-website/issues"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Report an issue
+              </a>
+            </p>
           </div>
           <div className="footer-meta">
             <p>

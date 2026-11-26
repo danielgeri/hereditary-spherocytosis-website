@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { trackEventOnce } from './analytics';
 import { CellSandbox } from './components/CellSandbox';
 import { EditorialSections } from './components/EditorialSections';
 import { Header } from './components/Header';
@@ -29,8 +30,27 @@ export function App() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  const handleDepthChange = useCallback((nextDepth: ReadingDepth) => {
+    setDepth(nextDepth);
+    if (nextDepth === 'clinical') {
+      trackEventOnce('depth/clinical', 'Switched to Clinical Language');
+    }
+  }, []);
+
+  const handleDiveChange = useCallback((nextDive: number) => {
+    setDive(nextDive);
+    if (nextDive >= 0.94) {
+      trackEventOnce('dive/10nm', 'Dived to 10 nm Protein Complex');
+    } else if (nextDive >= 0.72) {
+      trackEventOnce('dive/40nm', 'Dived to 40 nm Mesh');
+    }
+  }, []);
+
   const handleGeneChange = useCallback((gene: GeneId, syncSeverity = true) => {
     setSelectedGene(gene);
+    if (gene !== 'healthy') {
+      trackEventOnce(`gene/${gene}`, `Inspected ${gene}`);
+    }
     if (syncSeverity) {
       const profile = GENES.find((g) => g.id === gene);
       if (profile) {
@@ -41,9 +61,12 @@ export function App() {
 
   const handleJumpToCell = useCallback(
     (opts: { dive: number; gene?: GeneId; severity?: number }) => {
-      setDive(opts.dive);
+      handleDiveChange(opts.dive);
       if (opts.gene) {
         setSelectedGene(opts.gene);
+        if (opts.gene !== 'healthy') {
+          trackEventOnce(`gene/${opts.gene}`, `Inspected ${opts.gene}`);
+        }
         if (opts.severity === undefined) {
           const profile = GENES.find((g) => g.id === opts.gene);
           if (profile) setSeverity(profile.defaultSphericity);
@@ -54,17 +77,17 @@ export function App() {
       }
       document.getElementById('explorer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
-    []
+    [handleDiveChange]
   );
 
   return (
     <div className="app-shell">
-      <Header depth={depth} onDepthChange={setDepth} />
+      <Header depth={depth} onDepthChange={handleDepthChange} />
       <main>
         <CellSandbox
           depth={depth}
           dive={dive}
-          onDiveChange={setDive}
+          onDiveChange={handleDiveChange}
           selectedGene={selectedGene}
           onGeneChange={handleGeneChange}
           severity={severity}
