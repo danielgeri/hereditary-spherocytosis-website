@@ -45,3 +45,15 @@ export function trackEventOnce(path: string, title?: string): void {
     }, 1500);
   }
 }
+
+/** Records a cookieless SPA pageview when navigating between prerendered SEO routes. */
+export function trackPageview(path: string, title?: string): void {
+  if (typeof window === 'undefined' || isLocalhost()) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  if (typeof window.goatcounter?.count !== 'function') return;
+  try {
+    window.goatcounter.count({ path, title: title ?? document.title, event: false });
+  } catch {
+    // Silent no-op
+  }
+}

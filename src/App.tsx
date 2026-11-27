@@ -1,15 +1,52 @@
-import { useCallback, useEffect, useState } from 'react';
-import { trackEventOnce } from './analytics';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { trackEventOnce, trackPageview } from './analytics';
 import { CellSandbox } from './components/CellSandbox';
 import { EditorialSections } from './components/EditorialSections';
 import { Header } from './components/Header';
 import { GENES, GeneId, ReadingDepth } from './data/hsContent';
+import { getSeoRoute, normalizeRoutePath, SITE_ORIGIN } from './data/seoRoutes';
 
-export function App() {
+interface AppProps {
+  initialPath?: string;
+}
+
+export function App({ initialPath }: AppProps = {}) {
+  const startPath = normalizeRoutePath(
+    initialPath ?? (typeof window !== 'undefined' ? window.location.pathname : '/')
+  );
+  const initialRoute = getSeoRoute(startPath);
+
+  const [routePath, setRoutePath] = useState<string>(initialRoute.path);
   const [depth, setDepth] = useState<ReadingDepth>('plain');
-  const [dive, setDive] = useState<number>(0.0);
-  const [selectedGene, setSelectedGene] = useState<GeneId>('healthy');
-  const [severity, setSeverity] = useState<number>(0.0);
+  const [dive, setDive] = useState<number>(initialRoute.scenePreset.dive);
+  const [selectedGene, setSelectedGene] = useState<GeneId>(initialRoute.scenePreset.gene);
+  const [severity, setSeverity] = useState<number>(
+    initialRoute.scenePreset.severity ??
+      GENES.find((g) => g.id === initialRoute.scenePreset.gene)?.defaultSphericity ??
+      0.0
+  );
+
+  const activeRoute = useMemo(() => getSeoRoute(routePath), [routePath]);
+
+  // Keep browser history, <title>, and canonical URL synced on back/forward navigation
+  useEffect(() => {
+    const onPopState = () => {
+      const next = getSeoRoute(window.location.pathname);
+      setRoutePath(next.path);
+      setDive(next.scenePreset.dive);
+      setSelectedGene(next.scenePreset.gene);
+      setSeverity(
+        next.scenePreset.severity ??
+          GENES.find((g) => g.id === next.scenePreset.gene)?.defaultSphericity ??
+          0.0
+      );
+      document.title = next.title;
+      const canonical = document.querySelector('link[rel="canonical"]');
+      if (canonical) canonical.setAttribute('href', `${SITE_ORIGIN}${next.path}`);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // Scroll-state header fallback for browsers without CSS container-type: scroll-state
   useEffect(() => {
@@ -28,6 +65,47 @@ export function App() {
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const handleNavigate = useCallback((targetPath: string, hash?: string) => {
+    const next = getSeoRoute(targetPath);
+    const fullUrl = hash ? `${next.path}${hash}` : next.path;
+
+    if (typeof window !== 'undefined' && window.location.pathname + window.location.hash !== fullUrl) {
+      window.history.pushState({}, '', fullUrl);
+    }
+
+    setRoutePath(next.path);
+    setDive(next.scenePreset.dive);
+    setSelectedGene(next.scenePreset.gene);
+    setSeverity(
+      next.scenePreset.severity ??
+        GENES.find((g) => g.id === next.scenePreset.gene)?.defaultSphericity ??
+        0.0
+    );
+
+    if (typeof document !== 'undefined') {
+      document.title = next.title;
+      const canonical = document.querySelector('link[rel="canonical"]');
+      if (canonical) canonical.setAttribute('href', `${SITE_ORIGIN}${next.path}`);
+      const metaDesc = document.querySelector('meta[name="description"]');
+      if (metaDesc) metaDesc.setAttribute('content', next.description);
+    }
+
+    trackPageview(next.path, next.title);
+
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        if (hash) {
+          const targetEl = document.getElementById(hash.replace(/^#/, ''));
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
   }, []);
 
   const handleDepthChange = useCallback((nextDepth: ReadingDepth) => {
@@ -80,11 +158,16 @@ export function App() {
     [handleDiveChange]
   );
 
+  const handleFocusScene = useCallback(() => {
+    handleJumpToCell(activeRoute.scenePreset);
+  }, [activeRoute, handleJumpToCell]);
+
   return (
     <div className="app-shell">
-      <Header depth={depth} onDepthChange={handleDepthChange} />
+      <Header depth={depth} onDepthChange={handleDepthChange} onNavigate={handleNavigate} />
       <main>
         <CellSandbox
+          route={activeRoute}
           depth={depth}
           dive={dive}
           onDiveChange={handleDiveChange}
@@ -93,7 +176,13 @@ export function App() {
           severity={severity}
           onSeverityChange={setSeverity}
         />
-        <EditorialSections depth={depth} onJumpToCell={handleJumpToCell} />
+        <EditorialSections
+          route={activeRoute}
+          depth={depth}
+          onJumpToCell={handleJumpToCell}
+          onNavigate={handleNavigate}
+          onFocusScene={handleFocusScene}
+        />
       </main>
     </div>
   );

@@ -1323,6 +1323,266 @@ input[type='range']:focus-visible {
   text-align: right;
 }
 
+.table-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.table-actions .inline-jump {
+  margin-top: 0;
+}
+
+.inline-jump--muted {
+  color: var(--ink-secondary);
+}
+
+/* Dedicated Gene & Topic Subpage Spotlight + Related Guides + PubMed References */
+.route-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 1.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.route-breadcrumbs a {
+  color: var(--ink-secondary);
+  text-decoration: none;
+}
+
+.route-breadcrumbs a:hover {
+  color: var(--accent-crimson);
+  text-decoration: underline;
+}
+
+.spotlight-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  margin-bottom: 1.15rem;
+}
+
+.spotlight-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(2rem, 3.6vw, 3rem);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  max-width: 24ch;
+}
+
+.spotlight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.spotlight-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.48rem 0.9rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 550;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.spotlight-btn:hover {
+  border-color: var(--ink-primary);
+}
+
+.spotlight-btn--primary {
+  background: var(--accent-crimson);
+  border-color: var(--accent-crimson);
+  color: #ffffff;
+}
+
+.spotlight-btn--primary:hover {
+  background: var(--accent-crimson-deep);
+  border-color: var(--accent-crimson-deep);
+}
+
+.spotlight-lead {
+  margin: 0 0 1.8rem;
+  max-width: 72ch;
+  font-size: 1.02rem;
+  line-height: 1.66;
+  color: var(--ink-secondary);
+}
+
+.spotlight-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.spotlight-prose {
+  max-width: 74ch;
+  margin-bottom: 2rem;
+  display: grid;
+  gap: 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1.72;
+  color: var(--ink-secondary);
+}
+
+.spotlight-prose p {
+  margin: 0;
+}
+
+.sub-section-title {
+  margin: 0 0 0.9rem;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 1.65rem;
+  line-height: 1.15;
+}
+
+.faq-block {
+  margin-bottom: 2.25rem;
+}
+
+.topic-links-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.35rem;
+}
+
+.related-guides__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.85rem;
+}
+
+.related-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1.05rem 1.15rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  text-decoration: none;
+  color: var(--ink-primary);
+  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.related-card:hover {
+  border-color: var(--accent-crimson);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-float);
+}
+
+.related-card__kicker {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.related-card strong {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.related-card__cta {
+  margin-top: auto;
+  padding-top: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 550;
+  color: var(--accent-crimson);
+}
+
+/* Peer-Reviewed References Strip */
+.ed-section--refs {
+  padding: clamp(2.5rem, 4.5vw, 3.6rem) 0;
+  background: var(--bg-tinted);
+}
+
+.refs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.4rem;
+}
+
+.refs-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(1.5rem, 2.5vw, 2.05rem);
+  line-height: 1.1;
+}
+
+.refs-updated {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.refs-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.ref-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+}
+
+.ref-item__topic {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-crimson);
+}
+
+.ref-item p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+  flex: 1;
+}
+
 /* Clues, Tests & Care Cards */
 .clues-strip {
   display: grid;
@@ -1712,13 +1972,16 @@ input[type='range']:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .chain-grid {
+  .chain-grid,
+  .spotlight-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .clues-strip,
   .care-grid,
-  .inheritance-grid {
+  .inheritance-grid,
+  .topic-links-strip,
+  .refs-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1903,6 +2166,7 @@ input[type='range']:focus-visible {
   }
 
   .chain-grid,
+  .spotlight-facts,
   .tests-grid,
   .ed-details__cols {
     grid-template-columns: 1fr;

@@ -12,9 +12,11 @@ import {
 } from 'lucide-react';
 import { trackEventOnce } from '../analytics';
 import { GENES, GeneId, ReadingDepth } from '../data/hsContent';
+import { SeoRouteConfig } from '../data/seoRoutes';
 import { ProjectedPin, ProteinHoverInfo, RbcSceneEngine } from '../scene/RbcSceneEngine';
 
 interface CellSandboxProps {
+  route: SeoRouteConfig;
   depth: ReadingDepth;
   dive: number; // 0.00 (7.5 μm) -> 0.41 (500 nm) -> 0.79 (40 nm) -> 1.00 (10 nm Complex)
   onDiveChange: (nextDive: number) => void;
@@ -48,6 +50,7 @@ interface LeaderElRefs {
 }
 
 export const CellSandbox: React.FC<CellSandboxProps> = ({
+  route,
   depth,
   dive,
   onDiveChange,
@@ -482,7 +485,11 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
         <p className="eyebrow">
           <span className="unit-exact">7.5 μm</span> · Interactive 3D Erythrocyte
         </p>
-        <h1 className="stage-headline">Hereditary Spherocytosis</h1>
+        {route.kind === 'home' ? (
+          <h1 className="stage-headline">Hereditary Spherocytosis</h1>
+        ) : (
+          <p className="stage-headline">{route.shortLabel}</p>
+        )}
         <p className="stage-lead">
           {depth === 'plain'
             ? 'Explore how missing membrane anchors reshape a red blood cell. Drag to orbit, pick a gene below, or click the reticle to drill inside the membrane.'
@@ -740,8 +747,12 @@ export const CellSandbox: React.FC<CellSandboxProps> = ({
       </div>
 
       {/* Subtle Scroll Down Indicator */}
-      <a href="#mechanism" className="scroll-cue" aria-label="Scroll to overview guide">
-        <span>Read Guide</span>
+      <a
+        href={route.kind === 'home' ? '#mechanism' : '#guide'}
+        className="scroll-cue"
+        aria-label={route.kind === 'home' ? 'Scroll to overview guide' : `Scroll to ${route.shortLabel} guide`}
+      >
+        <span>{route.kind === 'home' ? 'Read Guide' : `Read ${route.shortLabel} Guide`}</span>
         <ArrowDown size={13} />
       </a>
     </section>

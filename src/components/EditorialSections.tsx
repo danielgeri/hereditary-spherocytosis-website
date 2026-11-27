@@ -8,19 +8,56 @@ import {
   ReadingDepth,
   SPLEEN_ROLE_TABLE,
 } from '../data/hsContent';
+import {
+  getSeoRoute,
+  PUBMED_REFERENCES,
+  SeoRouteConfig,
+  SITE_LAST_UPDATED,
+} from '../data/seoRoutes';
 import { usePwaInstall } from '../pwa';
+import { RouteSpotlight } from './RouteSpotlight';
 
 interface EditorialSectionsProps {
+  route: SeoRouteConfig;
   depth: ReadingDepth;
   onJumpToCell: (opts: { dive: number; gene?: GeneId; severity?: number }) => void;
+  onNavigate: (path: string, hash?: string) => void;
+  onFocusScene: () => void;
 }
 
-export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJumpToCell }) => {
+export const EditorialSections: React.FC<EditorialSectionsProps> = ({
+  route,
+  depth,
+  onJumpToCell,
+  onNavigate,
+  onFocusScene,
+}) => {
   const onlyMutatedGenes = GENES.filter((g) => g.id !== 'healthy');
   const { canPromptInstall, isStandalone, isIosSafari, triggerInstall } = usePwaInstall();
 
+  const handleRouteLink = (e: React.MouseEvent<HTMLAnchorElement>, path: string, hash?: string) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    onNavigate(path, hash);
+  };
+
+  const topicGuides = [
+    getSeoRoute('/diagnosis/ema-binding-test/'),
+    getSeoRoute('/diagnosis/mchc-newborn-hs/'),
+    getSeoRoute('/hs-vs-hereditary-xerocytosis/'),
+  ];
+
   return (
     <div className="editorial-body">
+      {route.kind !== 'home' ? (
+        <RouteSpotlight
+          route={route}
+          depth={depth}
+          onNavigate={onNavigate}
+          onFocusScene={onFocusScene}
+        />
+      ) : (
+        <>
       {/* SECTION I: MECHANISM CHAIN */}
       <section id="mechanism" className="ed-section">
         <div className="container">
@@ -170,13 +207,22 @@ export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJ
                     <td>{g.inheritance[depth]}</td>
                     <td>{g.severity[depth]}</td>
                     <td className="action-cell">
-                      <button
-                        type="button"
-                        className="inline-jump"
-                        onClick={() => onJumpToCell({ dive: 1.0, gene: g.id })}
-                      >
-                        Inspect 10 nm <ArrowUpRight size={13} />
-                      </button>
+                      <div className="table-actions">
+                        <a
+                          href={`/genes/${g.id.toLowerCase()}/`}
+                          className="inline-jump inline-jump--muted"
+                          onClick={(e) => handleRouteLink(e, `/genes/${g.id.toLowerCase()}/`)}
+                        >
+                          Guide
+                        </a>
+                        <button
+                          type="button"
+                          className="inline-jump"
+                          onClick={() => onJumpToCell({ dive: 1.0, gene: g.id })}
+                        >
+                          Inspect 10 nm <ArrowUpRight size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -259,6 +305,23 @@ export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJ
                 <p className="test-card__sample">{t.sample}</p>
                 <p className="test-card__desc">{t.summary[depth]}</p>
               </article>
+            ))}
+          </div>
+
+          <div className="topic-links-strip">
+            {topicGuides.map((guide) => (
+              <a
+                key={guide.path}
+                href={guide.path}
+                className="related-card"
+                onClick={(e) => handleRouteLink(e, guide.path)}
+              >
+                <span className="related-card__kicker">{guide.kicker}</span>
+                <strong>{guide.h1}</strong>
+                <span className="related-card__cta">
+                  Read deep dive <ArrowUpRight size={13} />
+                </span>
+              </a>
             ))}
           </div>
 
@@ -441,6 +504,64 @@ export const EditorialSections: React.FC<EditorialSectionsProps> = ({ depth, onJ
               </div>
             </details>
           </div>
+        </div>
+      </section>
+
+      {/* SECTION V: FREQUENTLY ASKED QUESTIONS (MATCHES FAQPAGE JSON-LD 1:1) */}
+      <section id="faq" className="ed-section">
+        <div className="container">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">05 · Quick Answers</p>
+              <h2 className="section-title">Frequently asked questions</h2>
+            </div>
+            <p className="section-lead">
+              {depth === 'plain'
+                ? 'Clear answers to the most common questions families and patients ask about HS genetics, lab results, and splenectomy.'
+                : 'Concise evidence-grounded answers across HS genetics, neonatal MCHC screening, EMA/OGE confirmatory testing, and pre-splenectomy HX exclusion.'}
+            </p>
+          </div>
+          <div className="details-stack">
+            {route.faqs.map((faq, idx) => (
+              <details key={faq.question} className="ed-details" open={idx === 0}>
+                <summary>
+                  <span>{faq.question}</span>
+                  <ChevronDown size={16} className="ed-details__chev" />
+                </summary>
+                <div className="ed-details__body">
+                  <p>{faq.answer[depth]}</p>
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+        </>
+      )}
+
+      {/* PEER-REVIEWED REFERENCES (E-E-A-T CREDIBILITY ACROSS ALL ROUTES) */}
+      <section id="references" className="ed-section ed-section--refs">
+        <div className="container">
+          <div className="refs-head">
+            <div>
+              <p className="eyebrow">Peer-Reviewed Sources</p>
+              <h2 className="refs-title">Clinical guidelines &amp; primary literature</h2>
+            </div>
+            <span className="refs-updated">Last updated {SITE_LAST_UPDATED}</span>
+          </div>
+          <ol className="refs-grid">
+            {PUBMED_REFERENCES.map((ref) => (
+              <li key={ref.id} className="ref-item">
+                <span className="ref-item__topic">{ref.topic}</span>
+                <p>
+                  <strong>{ref.citation}</strong> {ref.journal}
+                </p>
+                <a href={ref.url} target="_blank" rel="noopener noreferrer" className="inline-jump">
+                  PubMed PMID {ref.pmid} <ArrowUpRight size={13} />
+                </a>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 

@@ -6,8 +6,15 @@ import { registerPwa } from './pwa';
 
 registerPwa();
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+const rootEl = document.getElementById('root')!;
+const app = (
   <React.StrictMode>
     <App />
   </React.StrictMode>
 );
+
+if (rootEl.hasChildNodes()) {
+  ReactDOM.hydrateRoot(rootEl, app);
+} else {
+  ReactDOM.createRoot(rootEl).render(app);
+}
